@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import pytest
+import numpy as np
+
+from breakout_turbo_env.play import _hud_text, _print_episode_stats, build_parser, run
+
+
+def test_play_parser_defaults_and_layout_selection():
+    defaults = build_parser().parse_args([])
+    assert defaults.layout == "full"
+    assert defaults.scale == 8
+    assert defaults.frame_skip == 1
+    assert defaults.show_obs is False
+    selected = build_parser().parse_args(["--layout", "tunnel", "--scale", "4"])
+    assert selected.layout == "tunnel"
+    assert selected.scale == 4
+
+
+def test_play_rejects_invalid_runtime_values():
+    with pytest.raises(ValueError, match="positive"):
+        run(layout="full", scale=0, fps=60, frame_skip=1, max_frames=1)
+
+
+def test_episode_stats_are_printed(capsys):
+    info = {
+        "score": np.array([48]),
+        "lives": np.array([2]),
+        "bricks_remaining": np.array([0]),
+        "tick": np.array([1234]),
+    }
+    _print_episode_stats(
+        info,
+        episode=3,
+        layout="full",
+        episode_return=58.0,
+        display_steps=309,
+        elapsed=5.25,
+    )
+    output = capsys.readouterr().out
+    assert "episode_end episode=3" in output
+    assert "outcome=cleared" in output
+    assert "score=48" in output
+    assert "native_ticks=1234" in output
+
+
+def test_hud_shows_score_lives_and_bricks():
+    info = {
+        "score": np.array([7]),
+        "lives": np.array([2]),
+        "bricks_remaining": np.array([41]),
+    }
+    assert _hud_text(info, paused=False) == "SCORE 007    LIVES 2    BRICKS 41"
+    assert _hud_text(info, paused=True).endswith("PAUSED")
