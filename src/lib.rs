@@ -33,6 +33,12 @@ const COLLISION_BRICK: i64 = 4;
 const COLLISION_LOSS: i64 = 8;
 const COLLISION_CLEAR: i64 = 16;
 
+#[derive(Clone, Copy)]
+struct FastAreaPixel {
+    indices: [u16; 4],
+    count: u8,
+}
+
 #[derive(Clone)]
 struct Preprocess {
     out_h: usize,
@@ -42,6 +48,8 @@ struct Preprocess {
     crop_fill: u8,
     rows: Vec<(usize, usize)>,
     columns: Vec<(usize, usize)>,
+    fast_area: Option<Vec<FastAreaPixel>>,
+    fast_two_by_two: bool,
 }
 
 #[derive(Clone)]
@@ -61,6 +69,11 @@ struct Lane {
     stack: Vec<u8>,
     stack_head: usize,
     raw_scratch: Vec<u8>,
+    brick_layer: Vec<u8>,
+    rendered_paddle_x: usize,
+    rendered_ball_x: usize,
+    rendered_ball_y: usize,
+    render_initialized: bool,
 }
 
 impl Lane {
@@ -81,6 +94,11 @@ impl Lane {
             stack: vec![0; stack_size],
             stack_head: 0,
             raw_scratch: vec![0; RAW_W * RAW_H],
+            brick_layer: vec![0; RAW_W * RAW_H],
+            rendered_paddle_x: 0,
+            rendered_ball_x: 0,
+            rendered_ball_y: 0,
+            render_initialized: false,
         }
     }
 }
@@ -134,6 +152,7 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.last_collision = 0;
     lane.stack.fill(0);
     lane.stack_head = 0;
+    lane.render_initialized = false;
     let plane = preprocess.out_h * preprocess.out_w;
     render_and_push(lane, preprocess, frame_stack);
     for slot in 1..frame_stack {
@@ -195,6 +214,7 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
 
         if let Some(index) = colliding_brick(lane.ball_x, lane.ball_y, lane.bricks) {
             lane.bricks &= !(1u64 << index);
+            clear_brick_from_render_cache(lane, index);
             bounce_from_brick(lane, index, previous_x, previous_y);
             lane.score += 1;
             reward += 1.0;
@@ -228,8 +248,25 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
 }
 
 fn colliding_brick(x: i32, y: i32, mask: u64) -> Option<usize> {
-    for row in 0..BRICK_ROWS {
-        for col in 0..BRICK_COLS {
+    let cell_w = BRICK_W + BRICK_GAP_X;
+    let cell_h = BRICK_H + BRICK_GAP_Y;
+    let min_x = x - BALL_R - BRICK_X0;
+    let max_x = x + BALL_R - BRICK_X0;
+    let min_y = y - BALL_R - BRICK_Y0;
+    let max_y = y + BALL_R - BRICK_Y0;
+    if max_x < 0
+        || max_y < 0
+        || min_x > BRICK_COLS as i32 * cell_w
+        || min_y > BRICK_ROWS as i32 * cell_h
+    {
+        return None;
+    }
+    let min_col = (min_x.max(0) / cell_w).min(BRICK_COLS as i32 - 1) as usize;
+    let max_col = (max_x.max(0) / cell_w).min(BRICK_COLS as i32 - 1) as usize;
+    let min_row = (min_y.max(0) / cell_h).min(BRICK_ROWS as i32 - 1) as usize;
+    let max_row = (max_y.max(0) / cell_h).min(BRICK_ROWS as i32 - 1) as usize;
+    for row in min_row..=max_row {
+        for col in min_col..=max_col {
             let index = row * BRICK_COLS + col;
             if (mask >> index) & 1 == 0 {
                 continue;
@@ -334,9 +371,8 @@ fn palette_gray(index: u8) -> u8 {
     }
 }
 
-fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
-    let raw = &mut lane.raw_scratch;
-    raw.fill(0);
+fn initialize_render_cache(lane: &mut Lane) {
+    lane.brick_layer.fill(0);
     for row in 0..BRICK_ROWS {
         for col in 0..BRICK_COLS {
             let index = row * BRICK_COLS + col;
@@ -347,23 +383,76 @@ fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize)
             let y0 = 7 + row * 5;
             let value = palette_gray(3 + row as u8);
             for y in y0..(y0 + 4).min(RAW_H) {
-                raw[y * RAW_W + x0..y * RAW_W + (x0 + 10).min(RAW_W)].fill(value);
+                lane.brick_layer[y * RAW_W + x0..y * RAW_W + (x0 + 10).min(RAW_W)].fill(value);
             }
         }
+    }
+    lane.raw_scratch.copy_from_slice(&lane.brick_layer);
+    lane.render_initialized = true;
+}
+
+fn clear_brick_from_render_cache(lane: &mut Lane, index: usize) {
+    if !lane.render_initialized {
+        return;
+    }
+    let row = index / BRICK_COLS;
+    let col = index % BRICK_COLS;
+    let x0 = 4 + col * 11;
+    let y0 = 7 + row * 5;
+    for y in y0..(y0 + 4).min(RAW_H) {
+        let begin = y * RAW_W + x0;
+        let end = y * RAW_W + (x0 + 10).min(RAW_W);
+        lane.brick_layer[begin..end].fill(0);
+        lane.raw_scratch[begin..end].fill(0);
+    }
+}
+
+fn restore_previous_dynamic_pixels(lane: &mut Lane) {
+    let paddle_y = (PADDLE_Y / FP) as usize;
+    let paddle_h = (PADDLE_H / FP) as usize;
+    let paddle_w = (PADDLE_W / FP) as usize;
+    let paddle_right = (lane.rendered_paddle_x + paddle_w).min(RAW_W);
+    for y in paddle_y..paddle_y + paddle_h {
+        let begin = y * RAW_W + lane.rendered_paddle_x;
+        let end = y * RAW_W + paddle_right;
+        lane.raw_scratch[begin..end].copy_from_slice(&lane.brick_layer[begin..end]);
+    }
+
+    let left = lane.rendered_ball_x.saturating_sub(1);
+    let right = (lane.rendered_ball_x + 1).min(RAW_W - 1);
+    let top = lane.rendered_ball_y.saturating_sub(1);
+    let bottom = (lane.rendered_ball_y + 1).min(RAW_H - 1);
+    for y in top..=bottom {
+        let begin = y * RAW_W + left;
+        let end = y * RAW_W + right + 1;
+        lane.raw_scratch[begin..end].copy_from_slice(&lane.brick_layer[begin..end]);
+    }
+}
+
+fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
+    if lane.render_initialized {
+        restore_previous_dynamic_pixels(lane);
+    } else {
+        initialize_render_cache(lane);
     }
     let px = (lane.paddle_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
     let paddle_y = (PADDLE_Y / FP) as usize;
     let paddle_h = (PADDLE_H / FP) as usize;
     let paddle_w = (PADDLE_W / FP) as usize;
     for y in paddle_y..paddle_y + paddle_h {
-        raw[y * RAW_W + px..y * RAW_W + (px + paddle_w).min(RAW_W)].fill(palette_gray(1));
+        lane.raw_scratch[y * RAW_W + px..y * RAW_W + (px + paddle_w).min(RAW_W)]
+            .fill(palette_gray(1));
     }
     let bx = (lane.ball_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
     let by = (lane.ball_y / FP).clamp(0, RAW_H as i32 - 1) as usize;
     for y in by.saturating_sub(1)..=(by + 1).min(RAW_H - 1) {
-        raw[y * RAW_W + bx.saturating_sub(1)..y * RAW_W + (bx + 2).min(RAW_W)]
+        lane.raw_scratch[y * RAW_W + bx.saturating_sub(1)..y * RAW_W + (bx + 2).min(RAW_W)]
             .fill(palette_gray(2));
     }
+    lane.rendered_paddle_x = px;
+    lane.rendered_ball_x = bx;
+    lane.rendered_ball_y = by;
+    let raw = &mut lane.raw_scratch;
     let [top, bottom, left, right] = preprocess.crop;
     let (source_y, source_x) = if preprocess.mask_crop {
         for y in 0..RAW_H {
@@ -382,17 +471,61 @@ fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize)
     let out = &mut lane.stack[destination_slot * plane..(destination_slot + 1) * plane];
     // Deterministic integer box-area resize. Upsampled axes naturally select a
     // single source pixel; downsampled axes average every covered source pixel.
-    for (y, &(sy0, sy1)) in preprocess.rows.iter().enumerate() {
-        for (x, &(sx0, sx1)) in preprocess.columns.iter().enumerate() {
-            let mut sum = 0usize;
-            let mut count = 0usize;
-            for sy in sy0..sy1 {
-                for sx in sx0..sx1 {
-                    sum += raw[(source_y + sy) * RAW_W + source_x + sx] as usize;
-                    count += 1;
-                }
+    if preprocess.fast_two_by_two {
+        for (y, &(source_row, _)) in preprocess.rows.iter().enumerate() {
+            let row0 = (source_y + source_row) * RAW_W + source_x;
+            let row1 = row0 + RAW_W;
+            let output_row = y * preprocess.out_w;
+            for (x, &(source_column, _)) in preprocess.columns.iter().enumerate() {
+                // Construction validates that every area box is exactly 2x2
+                // and fully inside the fixed raw frame.
+                let value = unsafe {
+                    (*raw.get_unchecked(row0 + source_column) as u16
+                        + *raw.get_unchecked(row0 + source_column + 1) as u16
+                        + *raw.get_unchecked(row1 + source_column) as u16
+                        + *raw.get_unchecked(row1 + source_column + 1) as u16)
+                        >> 2
+                };
+                out[output_row + x] = value as u8;
             }
-            out[y * preprocess.out_w + x] = (sum / count) as u8;
+        }
+    } else if let Some(plan) = &preprocess.fast_area {
+        for (dst, pixel) in out.iter_mut().zip(plan) {
+            let indices = pixel.indices;
+            *dst = match pixel.count {
+                1 => raw[indices[0] as usize],
+                2 => {
+                    ((raw[indices[0] as usize] as u16 + raw[indices[1] as usize] as u16) >> 1) as u8
+                }
+                4 => {
+                    ((raw[indices[0] as usize] as u16
+                        + raw[indices[1] as usize] as u16
+                        + raw[indices[2] as usize] as u16
+                        + raw[indices[3] as usize] as u16)
+                        >> 2) as u8
+                }
+                count => {
+                    let sum = indices[..count as usize]
+                        .iter()
+                        .map(|&index| raw[index as usize] as u16)
+                        .sum::<u16>();
+                    (sum / count as u16) as u8
+                }
+            };
+        }
+    } else {
+        for (y, &(sy0, sy1)) in preprocess.rows.iter().enumerate() {
+            for (x, &(sx0, sx1)) in preprocess.columns.iter().enumerate() {
+                let mut sum = 0usize;
+                let mut count = 0usize;
+                for sy in sy0..sy1 {
+                    for sx in sx0..sx1 {
+                        sum += raw[(source_y + sy) * RAW_W + source_x + sx] as usize;
+                        count += 1;
+                    }
+                }
+                out[y * preprocess.out_w + x] = (sum / count) as u8;
+            }
         }
     }
     lane.stack_head = (lane.stack_head + 1) % frame_stack;
@@ -400,11 +533,10 @@ fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize)
 
 fn write_stack(lane: &Lane, dst: &mut [u8], frame_stack: usize) {
     let plane = dst.len() / frame_stack;
-    for output_slot in 0..frame_stack {
-        let source_slot = (lane.stack_head + output_slot) % frame_stack;
-        dst[output_slot * plane..(output_slot + 1) * plane]
-            .copy_from_slice(&lane.stack[source_slot * plane..(source_slot + 1) * plane]);
-    }
+    let split = lane.stack_head * plane;
+    let tail = lane.stack.len() - split;
+    dst[..tail].copy_from_slice(&lane.stack[split..]);
+    dst[tail..].copy_from_slice(&lane.stack[..split]);
 }
 
 fn write_signals(lane: &Lane, dst: &mut [i64]) {
@@ -511,6 +643,11 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
         stack,
         stack_head,
         raw_scratch: vec![0; RAW_W * RAW_H],
+        brick_layer: vec![0; RAW_W * RAW_H],
+        rendered_paddle_x: 0,
+        rendered_ball_x: 0,
+        rendered_ball_y: 0,
+        render_initialized: false,
     })
 }
 
@@ -559,7 +696,7 @@ impl NativeBreakoutVecEnv {
         } else {
             RAW_W - crop[2] - crop[3]
         };
-        let rows = (0..obs_h)
+        let rows: Vec<(usize, usize)> = (0..obs_h)
             .map(|y| {
                 let begin = y * source_h / obs_h;
                 let end = (((y + 1) * source_h + obs_h - 1) / obs_h)
@@ -568,7 +705,7 @@ impl NativeBreakoutVecEnv {
                 (begin, end)
             })
             .collect();
-        let columns = (0..obs_w)
+        let columns: Vec<(usize, usize)> = (0..obs_w)
             .map(|x| {
                 let begin = x * source_w / obs_w;
                 let end = (((x + 1) * source_w + obs_w - 1) / obs_w)
@@ -577,6 +714,34 @@ impl NativeBreakoutVecEnv {
                 (begin, end)
             })
             .collect();
+        let source_y = if mask_crop { 0 } else { crop[0] };
+        let source_x = if mask_crop { 0 } else { crop[2] };
+        let fast_area = if rows.iter().all(|&(begin, end)| end - begin <= 2)
+            && columns.iter().all(|&(begin, end)| end - begin <= 2)
+        {
+            let mut plan = Vec::with_capacity(obs_h * obs_w);
+            for &(row_begin, row_end) in &rows {
+                for &(column_begin, column_end) in &columns {
+                    let mut indices = [0u16; 4];
+                    let mut count = 0usize;
+                    for row in row_begin..row_end {
+                        for column in column_begin..column_end {
+                            indices[count] = ((source_y + row) * RAW_W + source_x + column) as u16;
+                            count += 1;
+                        }
+                    }
+                    plan.push(FastAreaPixel {
+                        indices,
+                        count: count as u8,
+                    });
+                }
+            }
+            Some(plan)
+        } else {
+            None
+        };
+        let fast_two_by_two = rows.iter().all(|&(begin, end)| end - begin == 2)
+            && columns.iter().all(|&(begin, end)| end - begin == 2);
         let preprocess = Preprocess {
             out_h: obs_h,
             out_w: obs_w,
@@ -585,6 +750,8 @@ impl NativeBreakoutVecEnv {
             crop_fill,
             rows,
             columns,
+            fast_area,
+            fast_two_by_two,
         };
         let stack_size = obs_h
             .checked_mul(obs_w)
@@ -679,6 +846,7 @@ impl NativeBreakoutVecEnv {
         mut terminated: PyReadwriteArray1<'_, bool>,
         mut truncated: PyReadwriteArray1<'_, bool>,
         mut signals: PyReadwriteArray2<'_, i64>,
+        write_info: bool,
     ) -> PyResult<()> {
         if self.lanes.iter().any(|lane| lane.pending_reset) {
             return Err(PyRuntimeError::new_err(
@@ -739,7 +907,9 @@ impl NativeBreakoutVecEnv {
                             lane.last_collision = collision_events;
                             render_and_push(lane, preprocess, frame_stack);
                             write_stack(lane, obs_dst, frame_stack);
-                            write_signals(lane, signal_dst);
+                            if write_info {
+                                write_signals(lane, signal_dst);
+                            }
                             *reward_dst = reward;
                             *term_dst = done;
                             *trunc_dst = false;
@@ -887,6 +1057,7 @@ impl NativeBreakoutVecEnv {
         target.lives = lives;
         target.pending_reset = false;
         target.last_collision = 0;
+        target.render_initialized = false;
         render_and_push(target, &self.preprocess, self.frame_stack);
         let source_slot = (target.stack_head + self.frame_stack - 1) % self.frame_stack;
         let plane = self.obs_h * self.obs_w;

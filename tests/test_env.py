@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pytest
 from gymnasium.vector import AutoresetMode
@@ -143,6 +145,28 @@ def test_thread_count_does_not_change_trace():
         serial.step(actions)
         parallel.step(actions)
     assert serial.get_state() == parallel.get_state()
+
+
+def test_optimized_hot_path_preserves_golden_observation_trace():
+    env = BreakoutVecEnv(num_envs=4, num_threads=1, frame_skip=4, frame_stack=4)
+    observation, _ = env.reset(options={"start_indices": np.arange(4, dtype=np.int32)})
+    digest = hashlib.sha256(observation.tobytes())
+    for step in range(100):
+        actions = np.array([(step + lane) % 3 for lane in range(4)], dtype=np.uint8)
+        observation, reward, terminated, truncated, _ = env.step(actions)
+        digest.update(observation.tobytes())
+        digest.update(reward.tobytes())
+        digest.update(terminated.tobytes())
+        digest.update(truncated.tobytes())
+        if terminated.any():
+            observation, _ = env.reset(
+                options={
+                    "reset_mask": terminated,
+                    "start_indices": np.arange(4, dtype=np.int32),
+                }
+            )
+            digest.update(observation.tobytes())
+    assert digest.hexdigest() == "c537564a24c7ce44d460b72c267546ebbb62ae6bd60c37db521a01aba0e07597"
 
 
 @pytest.mark.parametrize(

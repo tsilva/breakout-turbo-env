@@ -16,8 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-breakout-turbo-benchmark = "breakout_turbo_env.benchmark:main"
-breakout-turbo-play = "breakout_turbo_env.play:main"
+breakout-turbo-env = "breakout_turbo_env.cli:main"
 
 [project.optional-dependencies]
 dev = [

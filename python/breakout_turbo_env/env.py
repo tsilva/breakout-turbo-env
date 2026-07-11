@@ -241,7 +241,15 @@ class BreakoutVecEnv(VectorEnv):
         if values.shape != (self.num_envs,):
             raise ValueError(f"actions must have shape ({self.num_envs},)")
         observations, rewards, terminated, truncated, signals = self._next_buffers()
-        self.native.step_into(values, observations, rewards, terminated, truncated, signals)
+        self.native.step_into(
+            values,
+            observations,
+            rewards,
+            terminated,
+            truncated,
+            signals,
+            self._info_mode != "none",
+        )
         self._last_signals = signals
         return self._obs(observations), rewards, terminated, truncated, self._infos(signals, terminated)
 

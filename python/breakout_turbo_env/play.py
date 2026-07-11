@@ -35,8 +35,8 @@ class _ObservationViewer:
         self._window.destroy()
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Play breakout-turbo-env manually")
+def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog=prog, description="Play breakout-turbo-env manually")
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
     parser.add_argument("--scale", type=int, default=8, help="integer window scale")
     parser.add_argument("--fps", type=int, default=60, help="display updates per second")
@@ -212,8 +212,8 @@ def run(
         pygame.quit()
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def main(argv=None, *, prog: str = "breakout-turbo-env play") -> None:
+    args = build_parser(prog=prog).parse_args(argv)
     run(
         layout=args.layout,
         scale=args.scale,
