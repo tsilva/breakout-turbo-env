@@ -1,5 +1,9 @@
 # breakout-turbo-env
 
+<p align="center">
+  <img src="./logo.png" alt="breakout-turbo-env logo" width="220">
+</p>
+
 `breakout-turbo-env` is a deterministic Breakout environment for reinforcement-learning experiments, policy training, and learned-emulator datasets. It is aimed at researchers and engineers who need many identical game lanes, reproducible transitions, and observations that match a fixed Gymnasium vector-environment contract. Install it from source, build the native extension, then use the Python API, the interactive player, or the benchmark command.
 
 The public API is `BreakoutVecEnv`. Rust owns fixed-point physics, parallel lane stepping, indexed rendering, frame skip, frame stacking, and observation preprocessing; Python provides the Gymnasium lifecycle and state/branching helpers.
