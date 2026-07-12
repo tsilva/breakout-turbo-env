@@ -2,6 +2,8 @@
 
 <p align="center">
   <img src="./logo.png" alt="breakout-turbo-env logo" width="220">
+  <br>
+  <strong>🕹️ Deterministic Breakout for scalable RL experiments 🕹️</strong>
 </p>
 
 `breakout-turbo-env` is a deterministic Breakout environment for reinforcement-learning experiments, policy training, and learned-emulator datasets. It is aimed at researchers and engineers who need many identical game lanes, reproducible transitions, and observations that match a fixed Gymnasium vector-environment contract. Install it from source, build the native extension, then use the Python API, the interactive player, or the benchmark command.
