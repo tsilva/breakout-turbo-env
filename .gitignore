@@ -1,9 +1,13 @@
 /.venv/
+/.uv-cache/
 /target/
+/target-release/
+/.pytest-tmp/
 /.pytest_cache/
+/dist/
+/wheelhouse-v*/
 **/__pycache__/
 *.py[cod]
 *.so
 *.dylib
 *.whl
-

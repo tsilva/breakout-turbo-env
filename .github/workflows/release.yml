@@ -52,20 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(
-            .venv/bin/python - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          pyproject_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          cargo_version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
-          if pyproject_version != cargo_version:
-              raise SystemExit(
-                  f"version mismatch: pyproject.toml={pyproject_version}, Cargo.toml={cargo_version}"
-              )
-          print(pyproject_version)
-          PY
-          )"
+          version="$(tr -d '[:space:]' < VERSION.txt)"
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             tag_version="${GITHUB_REF_NAME#v}"
             if [[ "$tag_version" != "$version" ]]; then
@@ -75,32 +62,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Check version consistency
+        run: |
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            check-version --version "${{ steps.version.outputs.version }}"
+
       - name: Check PyPI version is unused
         if: github.event_name == 'push' && github.ref_type == 'tag'
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          .venv/bin/python - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-
-          package = "breakout-turbo-env"
-          version = os.environ["VERSION"]
-          try:
-              with urllib.request.urlopen(
-                  f"https://pypi.org/pypi/{package}/{version}/json", timeout=30
-              ) as response:
-                  json.load(response)
-          except urllib.error.HTTPError as error:
-              if error.code == 404:
-                  print(f"{package} {version} is available on PyPI")
-              else:
-                  raise
-          else:
-              raise SystemExit(f"{package} {version} already exists on PyPI")
-          PY
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            check-pypi --version "${{ steps.version.outputs.version }}"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -112,7 +81,7 @@ jobs:
         run: .venv/bin/python -m maturin develop --release
 
       - name: Run tests
-        run: .venv/bin/python -m pytest
+        run: make test PYTHON=.venv/bin/python
 
   build:
     name: Build ${{ matrix.platform }} wheel
@@ -144,56 +113,28 @@ jobs:
       - name: Install release environment
         run: uv sync --frozen --extra dev
 
-      - name: Build macOS arm64 wheel
-        if: matrix.platform == 'macos'
-        env:
-          ARCHFLAGS: -arch arm64
-          CARGO_TARGET_DIR: target-release
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
-        run: .venv/bin/python -m maturin build --release --out dist
-
-      - name: Build Linux x86_64 wheel
-        if: matrix.platform == 'linux'
-        env:
-          CIBW_ARCHS_LINUX: x86_64
-          CIBW_BEFORE_ALL_LINUX: curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
-          CIBW_BUILD: cp311-manylinux_x86_64
-          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH" CARGO_NET_GIT_FETCH_WITH_CLI=true'
-          CIBW_SKIP: '*-musllinux_*'
-        run: .venv/bin/python -m cibuildwheel --platform linux --output-dir dist
+      - name: Build wheel
+        run: |
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            build-platform +            --platform "${{ matrix.platform }}" +            --version "${{ needs.validate.outputs.version }}"
 
       - name: Smoke built wheel
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-          wheels=(dist/*.whl)
+          wheels=(wheelhouse-v${{ needs.validate.outputs.version }}-${{ matrix.platform }}/*.whl)
           if (( ${#wheels[@]} != 1 )); then
             printf 'expected one wheel, found %s\n' "${#wheels[@]}" >&2
             printf '%s\n' "${wheels[@]}" >&2
             exit 1
           fi
-          smoke_dir="$(mktemp -d)"
-          trap 'rm -rf "$smoke_dir"' EXIT
-          uv pip install --python .venv/bin/python --no-deps --target "$smoke_dir/site" "${wheels[0]}"
-          (
-            cd "$smoke_dir"
-            PYTHONPATH="$smoke_dir/site" "$GITHUB_WORKSPACE/.venv/bin/python" - <<'PY'
-          import breakout_turbo_env
-          from breakout_turbo_env import _breakout_turbo
-
-          assert "site" in breakout_turbo_env.__file__
-          assert "site" in _breakout_turbo.__file__
-          print(breakout_turbo_env.__file__)
-          print(_breakout_turbo.__file__)
-          PY
-          )
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            smoke-wheel "${wheels[0]}"
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-wheel-v${{ needs.validate.outputs.version }}
-          path: dist/*.whl
+          path: wheelhouse-v${{ needs.validate.outputs.version }}-${{ matrix.platform }}/*.whl
           if-no-files-found: error
 
   final-check:
@@ -224,50 +165,23 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: macos-wheel-v${{ needs.validate.outputs.version }}
-          path: dist
+          path: wheelhouse-v${{ needs.validate.outputs.version }}-macos
 
       - name: Download Linux wheel
         uses: actions/download-artifact@v4
         with:
           name: linux-wheel-v${{ needs.validate.outputs.version }}
-          path: dist
+          path: wheelhouse-v${{ needs.validate.outputs.version }}-linux
 
-      - name: Audit wheel contents and metadata
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
+      - name: Final audit
         run: |
-          .venv/bin/python - <<'PY'
-          import os
-          from pathlib import Path
-          import zipfile
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            final-check --version "${{ needs.validate.outputs.version }}"
 
-          version = os.environ["VERSION"]
-          wheels = sorted(Path("dist").glob("*.whl"))
-          if len(wheels) != 2:
-              raise SystemExit(f"expected macOS and Linux wheels, found: {wheels}")
-          for wheel in wheels:
-              with zipfile.ZipFile(wheel) as archive:
-                  names = archive.namelist()
-              checks = {
-                  "version in filename": version in wheel.name,
-                  "abi3 wheel": "abi3" in wheel.name,
-                  "package init": "breakout_turbo_env/__init__.py" in names,
-                  "native extension": any(
-                      name.startswith("breakout_turbo_env/_breakout_turbo")
-                      and name.endswith((".so", ".pyd"))
-                      for name in names
-                  ),
-                  "metadata": any(name.endswith(".dist-info/METADATA") for name in names),
-                  "no bytecode": not any(
-                      "__pycache__" in Path(name).parts or name.endswith(".pyc") for name in names
-                  ),
-              }
-              failed = [name for name, passed in checks.items() if not passed]
-              if failed:
-                  raise SystemExit(f"{wheel}: failed checks: {failed}")
-              print(f"audited {wheel}")
-          PY
-          .venv/bin/python -m twine check dist/*.whl
+      - name: Prepare publish distributions
+        run: |
+          mkdir -p dist
+          cp wheelhouse-v${{ needs.validate.outputs.version }}-macos/*.whl dist/
+          cp wheelhouse-v${{ needs.validate.outputs.version }}-linux/*.whl dist/
 
       - name: Upload final wheel bundle
         uses: actions/upload-artifact@v4

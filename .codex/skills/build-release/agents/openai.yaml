@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Release"
+  short_description: "Publish validated Breakout PyPI wheels"
+  default_prompt: "Use $build-release to publish validated macOS and Linux breakout-turbo-env wheels."

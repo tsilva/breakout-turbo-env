@@ -83,18 +83,23 @@ uv run breakout-turbo-env benchmark --help # list benchmark options
 
 ## Release
 
-Create and push a version tag matching the versions in `pyproject.toml` and
-`Cargo.toml`:
+With the locked development environment installed, launch the repository-owned
+release flow:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+make release
 ```
 
-The tag triggers `.github/workflows/release.yml`, which validates the project,
-builds and audits macOS arm64 and Linux x86_64 wheels, then publishes them to
-PyPI through trusted publishing. Manual workflow runs build and audit artifacts
-without publishing.
+For a new PyPI project, this releases the current unused version. Afterwards it
+defaults to the next patch version; use `scripts/release.py --part minor`,
+`--part major`, or `--to <version>` for another release shape. The command
+requires a clean tree synchronized with its upstream, validates locally, creates
+the release commit when version files change, tags the release, and atomically
+pushes the branch and tag.
+
+The tag triggers `.github/workflows/release.yml`, which builds and audits
+macOS arm64 and Linux x86_64 wheels, then publishes them to PyPI through trusted
+publishing. Manual workflow runs build and audit artifacts without publishing.
 
 ## Notes
 
