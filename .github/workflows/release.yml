@@ -64,12 +64,14 @@ jobs:
 
       - name: Check version consistency
         run: |
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            check-version --version "${{ steps.version.outputs.version }}"
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            check-version --version "${{ steps.version.outputs.version }}"
 
       - name: Check PyPI version is unused
         if: github.event_name == 'push' && github.ref_type == 'tag'
         run: |
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            check-pypi --version "${{ steps.version.outputs.version }}"
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            check-pypi --version "${{ steps.version.outputs.version }}"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -115,7 +117,10 @@ jobs:
 
       - name: Build wheel
         run: |
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            build-platform +            --platform "${{ matrix.platform }}" +            --version "${{ needs.validate.outputs.version }}"
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            build-platform \
+            --platform "${{ matrix.platform }}" \
+            --version "${{ needs.validate.outputs.version }}"
 
       - name: Smoke built wheel
         shell: bash
@@ -128,7 +133,8 @@ jobs:
             printf '%s\n' "${wheels[@]}" >&2
             exit 1
           fi
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            smoke-wheel "${wheels[0]}"
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            smoke-wheel "${wheels[0]}"
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
@@ -175,7 +181,8 @@ jobs:
 
       - name: Final audit
         run: |
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py +            final-check --version "${{ needs.validate.outputs.version }}"
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            final-check --version "${{ needs.validate.outputs.version }}"
 
       - name: Prepare publish distributions
         run: |
