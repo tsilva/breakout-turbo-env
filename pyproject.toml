@@ -13,6 +13,7 @@ dependencies = [
   "gymnasium>=1.1,<2",
   "numpy>=1.26,<3",
   "pygame==2.6.1",
+  "torch==2.7.1",
 ]
 
 [project.scripts]

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-_ALGORITHMS = ("jerk",)
+_ALGORITHMS = ("jerk", "ppo")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
         from train_jerk import main as train_jerk
 
         return train_jerk(args[1:])
+    if selected.algo == "ppo":
+        from train_ppo import main as train_ppo
+
+        return train_ppo(args[1:])
     raise AssertionError("unreachable")
 
 

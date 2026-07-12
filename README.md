@@ -71,6 +71,7 @@ Train an algorithm by passing its name to the single training command:
 
 ```bash
 uv run python train.py jerk
+uv run python train.py ppo
 ```
 
 Training artifacts are written to `runs/<algorithm>/<timestamp>/`; JERK saves
@@ -79,6 +80,7 @@ command:
 
 ```bash
 uv run python play.py jerk
+uv run python play.py ppo
 ```
 
 Select a specific JERK action tape when needed:
