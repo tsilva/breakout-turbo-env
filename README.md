@@ -81,6 +81,21 @@ uv run breakout-turbo-env play --help      # list player options
 uv run breakout-turbo-env benchmark --help # list benchmark options
 ```
 
+## Release
+
+Create and push a version tag matching the versions in `pyproject.toml` and
+`Cargo.toml`:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The tag triggers `.github/workflows/release.yml`, which validates the project,
+builds and audits macOS arm64 and Linux x86_64 wheels, then publishes them to
+PyPI through trusted publishing. Manual workflow runs build and audit artifacts
+without publishing.
+
 ## Notes
 
 - The environment is manual-reset only. `AutoresetMode.DISABLED` is the only accepted mode, and a terminal lane must be included in an explicit `reset(options={"reset_mask": mask})` before its next `step`.

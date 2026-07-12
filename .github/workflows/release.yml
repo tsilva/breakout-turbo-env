@@ -1,0 +1,299 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional git ref to build"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  PYTHON_VERSION: "3.13"
+  UV_CACHE_DIR: .uv-cache
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install release environment
+        run: uv sync --frozen --extra dev
+
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(
+            .venv/bin/python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          pyproject_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          cargo_version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
+          if pyproject_version != cargo_version:
+              raise SystemExit(
+                  f"version mismatch: pyproject.toml={pyproject_version}, Cargo.toml={cargo_version}"
+              )
+          print(pyproject_version)
+          PY
+          )"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "$tag_version" != "$version" ]]; then
+              echo "Tag $GITHUB_REF_NAME does not match project version $version" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check PyPI version is unused
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          package = "breakout-turbo-env"
+          version = os.environ["VERSION"]
+          try:
+              with urllib.request.urlopen(
+                  f"https://pypi.org/pypi/{package}/{version}/json", timeout=30
+              ) as response:
+                  json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code == 404:
+                  print(f"{package} {version} is available on PyPI")
+              else:
+                  raise
+          else:
+              raise SystemExit(f"{package} {version} already exists on PyPI")
+          PY
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Check Rust release build
+        run: cargo check --release
+
+      - name: Build editable extension
+        run: .venv/bin/python -m maturin develop --release
+
+      - name: Run tests
+        run: .venv/bin/python -m pytest
+
+  build:
+    name: Build ${{ matrix.platform }} wheel
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
+          - platform: linux
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install release environment
+        run: uv sync --frozen --extra dev
+
+      - name: Build macOS arm64 wheel
+        if: matrix.platform == 'macos'
+        env:
+          ARCHFLAGS: -arch arm64
+          CARGO_TARGET_DIR: target-release
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: .venv/bin/python -m maturin build --release --out dist
+
+      - name: Build Linux x86_64 wheel
+        if: matrix.platform == 'linux'
+        env:
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BEFORE_ALL_LINUX: curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          CIBW_BUILD: cp311-manylinux_x86_64
+          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH" CARGO_NET_GIT_FETCH_WITH_CLI=true'
+          CIBW_SKIP: '*-musllinux_*'
+        run: .venv/bin/python -m cibuildwheel --platform linux --output-dir dist
+
+      - name: Smoke built wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            printf 'expected one wheel, found %s\n' "${#wheels[@]}" >&2
+            printf '%s\n' "${wheels[@]}" >&2
+            exit 1
+          fi
+          smoke_dir="$(mktemp -d)"
+          trap 'rm -rf "$smoke_dir"' EXIT
+          uv pip install --python .venv/bin/python --no-deps --target "$smoke_dir/site" "${wheels[0]}"
+          (
+            cd "$smoke_dir"
+            PYTHONPATH="$smoke_dir/site" "$GITHUB_WORKSPACE/.venv/bin/python" - <<'PY'
+          import breakout_turbo_env
+          from breakout_turbo_env import _breakout_turbo
+
+          assert "site" in breakout_turbo_env.__file__
+          assert "site" in _breakout_turbo.__file__
+          print(breakout_turbo_env.__file__)
+          print(_breakout_turbo.__file__)
+          PY
+          )
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-wheel-v${{ needs.validate.outputs.version }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  final-check:
+    name: Audit release wheels
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install release environment
+        run: uv sync --frozen --extra dev
+
+      - name: Download macOS wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-wheel-v${{ needs.validate.outputs.version }}
+          path: dist
+
+      - name: Download Linux wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-wheel-v${{ needs.validate.outputs.version }}
+          path: dist
+
+      - name: Audit wheel contents and metadata
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import os
+          from pathlib import Path
+          import zipfile
+
+          version = os.environ["VERSION"]
+          wheels = sorted(Path("dist").glob("*.whl"))
+          if len(wheels) != 2:
+              raise SystemExit(f"expected macOS and Linux wheels, found: {wheels}")
+          for wheel in wheels:
+              with zipfile.ZipFile(wheel) as archive:
+                  names = archive.namelist()
+              checks = {
+                  "version in filename": version in wheel.name,
+                  "abi3 wheel": "abi3" in wheel.name,
+                  "package init": "breakout_turbo_env/__init__.py" in names,
+                  "native extension": any(
+                      name.startswith("breakout_turbo_env/_breakout_turbo")
+                      and name.endswith((".so", ".pyd"))
+                      for name in names
+                  ),
+                  "metadata": any(name.endswith(".dist-info/METADATA") for name in names),
+                  "no bytecode": not any(
+                      "__pycache__" in Path(name).parts or name.endswith(".pyc") for name in names
+                  ),
+              }
+              failed = [name for name, passed in checks.items() if not passed]
+              if failed:
+                  raise SystemExit(f"{wheel}: failed checks: {failed}")
+              print(f"audited {wheel}")
+          PY
+          .venv/bin/python -m twine check dist/*.whl
+
+      - name: Upload final wheel bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-v${{ needs.validate.outputs.version }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - validate
+      - final-check
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/breakout-turbo-env
+    permissions:
+      id-token: write
+    steps:
+      - name: Download audited distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-v${{ needs.validate.outputs.version }}
+          path: dist
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

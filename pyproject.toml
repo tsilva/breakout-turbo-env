@@ -20,8 +20,10 @@ breakout-turbo-env = "breakout_turbo_env.cli:main"
 
 [project.optional-dependencies]
 dev = [
+  "cibuildwheel>=2.23.4,<4",
   "maturin>=1.8,<2",
   "pytest>=8,<9",
+  "twine>=6.2,<7",
 ]
 
 [tool.maturin]
