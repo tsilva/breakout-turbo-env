@@ -5,6 +5,8 @@
 /.pytest-tmp/
 /.pytest_cache/
 /dist/
+/runs/
+/jerk_policy.json
 /wheelhouse-v*/
 **/__pycache__/
 *.py[cod]

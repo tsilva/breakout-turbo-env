@@ -65,6 +65,28 @@ uv run breakout-turbo-env play
 
 Use Left/Right or A/D to move, Space or R to reset, P to pause, and Escape to quit. Choose a deterministic layout with `--layout checker`, `--layout tunnel`, or `--layout sparse`; `--show-obs` opens the four-frame processed observation stack in a second window.
 
+## Train and replay policies
+
+Train an algorithm by passing its name to the single training command:
+
+```bash
+uv run python train.py jerk
+```
+
+Training artifacts are written to `runs/<algorithm>/<timestamp>/`; JERK saves
+its action tape as `policy.json`. Replay the newest policy with the single play
+command:
+
+```bash
+uv run python play.py jerk
+```
+
+Select a specific JERK action tape when needed:
+
+```bash
+uv run python play.py jerk --policy runs/jerk/20260712-120000/policy.json
+```
+
 ## Benchmark
 
 ```bash
