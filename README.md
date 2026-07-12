@@ -1,18 +1,16 @@
-# breakout-turbo-env
-
-<p align="center">
-  <img src="./logo.png" alt="breakout-turbo-env logo" width="220">
-  <br>
+<div align="center">
+  <img src="./logo.png" alt="breakout-turbo-env logo" width="220" />
+  <br />
   <strong>🕹️ Blazing-fast, deterministic Breakout for Reinforcement Learning 🕹️</strong>
-</p>
+</div>
 
-`breakout-turbo-env` is a deterministic Breakout environment for reinforcement-learning experiments, policy training, and learned-emulator datasets. It is aimed at researchers and engineers who need many identical game lanes, reproducible transitions, and observations that match a fixed Gymnasium vector-environment contract. Install it from source, build the native extension, then use the Python API, the interactive player, or the benchmark command.
+breakout-turbo-env is a Python environment for running many deterministic Breakout games at once. It is for reinforcement-learning researchers and engineers who need reproducible transitions, fixed observations, and a Gymnasium vector-environment API. Build the native extension, create `BreakoutVecEnv`, and step it from Python; the repository also includes a playable window, benchmark, and two small training paths.
 
-The public API is `BreakoutVecEnv`. Rust owns fixed-point physics, parallel lane stepping, indexed rendering, frame skip, frame stacking, and observation preprocessing; Python provides the Gymnasium lifecycle and state/branching helpers.
+Fixed-point Rust physics owns game state and parallel stepping. Python exposes the Gymnasium lifecycle, rendering, snapshots, and branching helpers.
 
 ## Install
 
-Requirements: Python 3.11+, `uv`, and a Rust toolchain.
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and a Rust toolchain.
 
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
@@ -21,22 +19,13 @@ uv sync --extra dev
 uv run maturin develop --release
 ```
 
-## Use
+Use `BreakoutVecEnv` from the repository root or an environment where the extension has been installed.
 
 ```python
 import numpy as np
 from breakout_turbo_env import BreakoutVecEnv
 
-env = BreakoutVecEnv(
-    num_envs=4096,
-    num_threads=8,
-    obs_resize=(84, 84),
-    frame_skip=4,
-    frame_stack=4,
-    obs_copy="safe_view",
-    info_filter="none",
-)
-
+env = BreakoutVecEnv(num_envs=4096, num_threads=8)
 obs, infos = env.reset()
 obs, rewards, terminated, truncated, infos = env.step(
     np.zeros(env.num_envs, dtype=np.uint8)
@@ -47,93 +36,29 @@ if done.any():
     obs, reset_infos = env.reset(options={"reset_mask": done})
 ```
 
-The default observation batch is grayscale `uint8` in CHW order with shape
-`(num_envs, 4, 84, 84)`. Actions are `0` (noop), `1` (left), and `2` (right).
-
-Exact snapshots can be replayed or branched without mutating the live lanes:
-
-```python
-states = env.get_state()
-branches = env.branch(states[:128], actions=(0, 1, 2))
-```
-
-## Play
-
-```bash
-uv run breakout-turbo-env play
-```
-
-Use Left/Right or A/D to move, Space or R to reset, P to pause, and Escape to quit. Choose a deterministic layout with `--layout checker`, `--layout tunnel`, or `--layout sparse`; `--show-obs` opens the four-frame processed observation stack in a second window.
-
-## Train and replay policies
-
-Train an algorithm by passing its name to the single training command:
-
-```bash
-uv run python train.py jerk
-uv run python train.py ppo
-```
-
-Training artifacts are written to `runs/<algorithm>/<timestamp>/`; JERK saves
-its action tape as `policy.json`. Replay the newest policy with the single play
-command:
-
-```bash
-uv run python play.py jerk
-uv run python play.py ppo
-```
-
-Select a specific JERK action tape when needed:
-
-```bash
-uv run python play.py jerk --policy runs/jerk/20260712-120000/policy.json
-```
-
-## Benchmark
-
-```bash
-uv run breakout-turbo-env benchmark
-```
-
-The benchmark uses 16 environments with grayscale area resize, CHW observations, frame skip 4, frame stack 4, safe-view buffers, disabled max-pooling, and manual resets. Use `--steps`, `--warmup`, `--repeats`, and `--threads` to change measurement length or CPU concurrency. Its console output follows the sibling `SuperMarioBros-Nes-turbo` benchmark shape: `config=...`, `obs_shape=...`, one `run=...` line per repeat, and a `summary=...` line with environment steps, emulated frames, and observation-buffer throughput.
-
-On the development Apple Silicon host, the optimized 8-thread path sustains roughly 277,000 policy transitions/s (1.11 million native ticks/s) and 7.8 GB/s of processed observation output after warmup.
-
 ## Commands
 
 ```bash
-uv run pytest                         # run contract and regression tests
-uv run breakout-turbo-env play --help      # list player options
-uv run breakout-turbo-env benchmark --help # list benchmark options
+uv run breakout-turbo-env play                 # open the interactive player
+uv run breakout-turbo-env benchmark            # measure the fixed 16-lane policy path
+uv run pytest                                  # run Python contract and regression tests
+cargo test --lib                               # run Rust library tests
+uv run python train.py jerk                    # train a deterministic JERK action tape
+uv run python train.py ppo                     # train a PPO policy
+uv run python play.py jerk                     # replay the newest JERK policy
+uv run python play.py ppo                      # replay the newest PPO policy
+make release                                   # validate, tag, and publish a release
 ```
 
-## Release
-
-With the locked development environment installed, launch the repository-owned
-release flow:
-
-```bash
-make release
-```
-
-For a new PyPI project, this releases the current unused version. Afterwards it
-defaults to the next patch version; use `scripts/release.py --part minor`,
-`--part major`, or `--to <version>` for another release shape. The command
-requires a clean tree synchronized with its upstream, validates locally, creates
-the release commit when version files change, tags the release, and atomically
-pushes the branch and tag.
-
-The tag triggers `.github/workflows/release.yml`, which builds and audits
-macOS arm64 and Linux x86_64 wheels, then publishes them to PyPI through trusted
-publishing. Manual workflow runs build and audit artifacts without publishing.
+For player, benchmark, training, and replay options, append `--help` to the corresponding command.
 
 ## Notes
 
-- The environment is manual-reset only. `AutoresetMode.DISABLED` is the only accepted mode, and a terminal lane must be included in an explicit `reset(options={"reset_mask": mask})` before its next `step`.
-- There is no hidden reset randomness. Built-in starts are `full`, `checker`, `tunnel`, and `sparse`; selected lanes can be reset while other lanes continue unchanged.
-- `obs_layout="chw"`, grayscale observations, area resize, `render_mode="rgb_array"`, and `maxpool_last_two=False` are fixed by the policy contract.
-- `render()` returns the raw 96×96 RGB game frame. Training observations are preprocessed grayscale `uint8` frames and do not include the play window HUD.
-- The Rust extension is built in release mode by `maturin`; `uv.lock` pins the Python dependency resolution window.
+- The standard observation batch is grayscale `uint8`, CHW, and defaults to `(num_envs, 4, 84, 84)`. Actions are `0` (noop), `1` (left), and `2` (right).
+- The environment is manual-reset only: after a terminal lane, call `reset(options={"reset_mask": mask})` before stepping that lane again. Built-in layouts are `full`, `checker`, `tunnel`, and `sparse`.
+- `render()` returns the raw 96×96 RGB game frame; training observations use the processed grayscale stack. The interactive player accepts Left/Right or A/D, Space or R to reset, P to pause, and Escape to quit.
+- Training outputs live in `runs/<algorithm>/<timestamp>/`. JERK policies use `policy.json`; PPO policies use `policy.npz`.
+- `make release` requires a clean branch synchronized with its upstream. The release workflow builds and audits macOS arm64 and Linux x86_64 wheels before publishing to PyPI.
 
 ## Architecture
 
