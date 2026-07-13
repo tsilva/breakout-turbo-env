@@ -301,38 +301,54 @@ def run(args: list[str], **kwargs: object) -> None:
     subprocess.run(args, cwd=REPO_ROOT, check=True, **kwargs)
 
 
+def cargo_target_dir(platform: str, root: Path = REPO_ROOT) -> Path:
+    if platform not in {"macos", "linux"}:
+        raise ValueError(f"unknown platform: {platform}")
+    return root / "target-release" / platform
+
+
+def macos_build_env(root: Path = REPO_ROOT) -> dict[str, str]:
+    return {
+        "ARCHFLAGS": "-arch arm64",
+        "CARGO_TARGET_DIR": str(cargo_target_dir("macos", root)),
+        "MACOSX_DEPLOYMENT_TARGET": "11.0",
+    }
+
+
+def linux_build_env(root: Path = REPO_ROOT) -> dict[str, str]:
+    target_dir = cargo_target_dir("linux", root).resolve()
+    return {
+        "CIBW_ARCHS_LINUX": "x86_64",
+        "CIBW_BEFORE_ALL_LINUX": (
+            "curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal"
+        ),
+        "CIBW_BUILD": "cp311-manylinux_x86_64",
+        "CIBW_CONTAINER_ENGINE": (
+            f"docker; create_args: --volume={target_dir}:/cargo-target"
+        ),
+        "CIBW_ENVIRONMENT_LINUX": (
+            'PATH="$HOME/.cargo/bin:$PATH" '
+            "CARGO_NET_GIT_FETCH_WITH_CLI=true CARGO_TARGET_DIR=/cargo-target"
+        ),
+        "CIBW_SKIP": "*-musllinux_*",
+    }
+
+
 def build_platform(args: argparse.Namespace) -> None:
     version = args.version or read_version()
     validate_version(version)
     output = wheelhouse(version, args.platform)
     output.mkdir(parents=True, exist_ok=True)
+    cargo_target_dir(args.platform).mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     if args.platform == "macos":
-        env.update(
-            {
-                "ARCHFLAGS": "-arch arm64",
-                "CARGO_TARGET_DIR": str(REPO_ROOT / "target-release"),
-                "MACOSX_DEPLOYMENT_TARGET": "11.0",
-            }
-        )
+        env.update(macos_build_env())
         run(
             [str(PYTHON), "-m", "maturin", "build", "--release", "--out", str(output)],
             env=env,
         )
         return
-    env.update(
-        {
-            "CIBW_ARCHS_LINUX": "x86_64",
-            "CIBW_BEFORE_ALL_LINUX": (
-                "curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal"
-            ),
-            "CIBW_BUILD": "cp311-manylinux_x86_64",
-            "CIBW_ENVIRONMENT_LINUX": (
-                'PATH="$HOME/.cargo/bin:$PATH" CARGO_NET_GIT_FETCH_WITH_CLI=true'
-            ),
-            "CIBW_SKIP": "*-musllinux_*",
-        }
-    )
+    env.update(linux_build_env())
     run(
         [
             str(PYTHON),

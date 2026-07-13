@@ -112,6 +112,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Restore Cargo build cache
+        uses: actions/cache@v4
+        with:
+          path: target-release
+          key: cargo-release-v1-${{ matrix.platform }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: |
+            cargo-release-v1-${{ matrix.platform }}-${{ runner.arch }}-
+
       - name: Install release environment
         run: uv sync --frozen --extra dev
 
