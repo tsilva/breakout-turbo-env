@@ -27,13 +27,6 @@ _SIGNAL_NAMES = (
 _START_IDS = ("full", "checker", "tunnel", "sparse")
 
 
-def _is_disabled(value: Any) -> bool:
-    if isinstance(value, AutoresetMode):
-        return value is AutoresetMode.DISABLED
-    raw = getattr(value, "value", value)
-    return str(raw).lower().replace("_", "").replace("-", "") == "disabled"
-
-
 class BreakoutVecEnv(VectorEnv):
     """Native deterministic Breakout vector environment.
 
@@ -65,15 +58,12 @@ class BreakoutVecEnv(VectorEnv):
         obs_grayscale: bool = True,
         obs_copy: str = "safe_view",
         info_filter: str | Mapping[str, Any] = "all",
-        autoreset_mode: AutoresetMode | str = AutoresetMode.DISABLED,
         render_mode: str = "rgb_array",
         **unsupported: Any,
     ):
         if unsupported:
             names = ", ".join(sorted(unsupported))
             raise TypeError(f"unsupported option(s): {names}")
-        if not _is_disabled(autoreset_mode):
-            raise ValueError("BreakoutVecEnv only supports AutoresetMode.DISABLED")
         if maxpool_last_two:
             raise ValueError("maxpool_last_two is not implemented and must be False")
         if str(obs_layout).lower() != "chw":

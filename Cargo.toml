@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 numpy = "0.24.0"
-pyo3 = { version = "0.24.2", features = ["extension-module", "abi3-py311"] }
+pyo3 = { version = "0.24.2", features = ["abi3-py311"] }
 rayon = "1.10.0"
 
 [profile.release]
@@ -20,4 +20,3 @@ lto = "fat"
 opt-level = 3
 panic = "abort"
 strip = "symbols"
-

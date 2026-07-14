@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 
 import numpy as np
 import pytest
@@ -20,8 +21,10 @@ def test_contract_is_chw_manual_and_no_maxpool():
     assert obs.dtype == np.uint8
     assert env.autoreset_mode is AutoresetMode.DISABLED
     assert infos["_start_id"].all()
-    with pytest.raises(ValueError, match="DISABLED"):
-        make_env(autoreset_mode=AutoresetMode.SAME_STEP)
+    assert BreakoutVecEnv.metadata["autoreset_mode"] is AutoresetMode.DISABLED
+    assert "autoreset_mode" not in inspect.signature(BreakoutVecEnv).parameters
+    with pytest.raises(TypeError, match="unsupported option.*autoreset_mode"):
+        make_env(autoreset_mode=AutoresetMode.DISABLED)
     with pytest.raises(ValueError, match="maxpool"):
         make_env(maxpool_last_two=True)
     with pytest.raises(ValueError, match="chw"):
