@@ -10,8 +10,8 @@ resolution-markers = [
 exclude-newer = "2026-07-04T00:00:00Z"
 
 [options.exclude-newer-package]
-supermariobrosnes-turbo = "2026-07-11T07:06:36Z"
-stable-retro-turbo = "2026-07-12T08:29:41Z"
+supermariobrosnes-turbo = "2026-07-13T14:56:07Z"
+stable-retro-turbo = "2026-07-13T14:32:02Z"
 
 [manifest]
 constraints = [
@@ -48,7 +48,7 @@ wheels = [
 
 [[package]]
 name = "breakout-turbo-env"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "gymnasium" },
