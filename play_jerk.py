@@ -81,7 +81,13 @@ def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int
     if scale <= 0 or fps <= 0 or max_frames < 0:
         raise ValueError("scale and fps must be positive; max-frames must be non-negative")
 
-    import pygame
+    try:
+        import pygame
+    except ImportError as exc:
+        raise SystemExit(
+            "policy playback requires the play extra; "
+            "install `breakout-turbo-env[play]`"
+        ) from exc
 
     pygame.init()
     env = BreakoutVecEnv(

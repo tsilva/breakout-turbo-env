@@ -77,7 +77,13 @@ def _parser() -> argparse.ArgumentParser:
 def run(policy: PpoPolicy, *, scale: int, fps: int, loop: bool, max_frames: int = 0) -> None:
     if scale <= 0 or fps <= 0 or max_frames < 0:
         raise ValueError("scale and fps must be positive; max-frames must be non-negative")
-    import pygame
+    try:
+        import pygame
+    except ImportError as exc:
+        raise SystemExit(
+            "policy playback requires the play extra; "
+            "install `breakout-turbo-env[play]`"
+        ) from exc
 
     pygame.init()
     env = BreakoutVecEnv(num_envs=1, num_threads=1, frame_skip=policy.frame_skip, frame_stack=1, info_filter="all")

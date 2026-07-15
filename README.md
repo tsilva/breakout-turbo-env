@@ -16,12 +16,20 @@ Requires Python 3.11+.
 pip install breakout-turbo-env
 ```
 
+The core environment depends only on Gymnasium and NumPy. Install optional
+tools explicitly when needed:
+
+```bash
+pip install "breakout-turbo-env[play]"   # interactive Pygame player
+pip install "breakout-turbo-env[train]"  # local PPO training with PyTorch
+```
+
 To work from source, install [uv](https://docs.astral.sh/uv/) and a Rust toolchain, then run:
 
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --extra dev
+uv sync --extra dev --extra play --extra train
 make develop-release
 ```
 
@@ -47,14 +55,14 @@ env.close()
 ## Commands
 
 ```bash
-uv run breakout-turbo-env play                 # open the interactive player
+uv run --extra play breakout-turbo-env play    # open the interactive player
 uv run breakout-turbo-env benchmark            # measure the fixed 16-lane policy path
 uv run pytest                                  # run Python contract and regression tests
 cargo test --lib                               # run Rust library tests
 uv run python train.py jerk                    # train a deterministic JERK action tape
-uv run python train.py ppo                     # train a PPO policy
-uv run python play.py jerk                     # replay the newest JERK policy
-uv run python play.py ppo                      # replay the newest PPO policy
+uv run --extra train python train.py ppo       # train a PPO policy
+uv run --extra play python play.py jerk        # replay the newest JERK policy
+uv run --extra play python play.py ppo         # replay the newest PPO policy
 make release                                   # validate, tag, and publish a release
 ```
 

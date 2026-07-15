@@ -99,7 +99,13 @@ def run(
     if scale <= 0 or fps <= 0 or frame_skip <= 0 or max_frames < 0:
         raise ValueError("scale, fps, and frame-skip must be positive; max-frames must be non-negative")
 
-    import pygame
+    try:
+        import pygame
+    except ImportError as exc:
+        raise SystemExit(
+            "interactive play requires the play extra; "
+            "install `breakout-turbo-env[play]`"
+        ) from exc
 
     pygame.init()
     env = BreakoutVecEnv(

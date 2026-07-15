@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,3 +46,14 @@ def test_release_build_uses_persistent_platform_scoped_cargo_targets(tmp_path):
         f"{(tmp_path / 'target-release' / 'linux').resolve()}:/cargo-target"
     )
     assert "CARGO_TARGET_DIR=/cargo-target" in linux["CIBW_ENVIRONMENT_LINUX"]
+
+
+def test_core_package_keeps_play_and_training_dependencies_optional():
+    metadata = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    project = metadata["project"]
+
+    assert project["dependencies"] == ["gymnasium>=1.1,<2", "numpy>=1.26,<3"]
+    assert project["optional-dependencies"]["play"] == ["pygame>=2.6,<3"]
+    assert project["optional-dependencies"]["train"] == ["torch>=2.7,<3"]

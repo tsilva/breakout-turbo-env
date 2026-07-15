@@ -196,7 +196,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import torch
     except ImportError as exc:
-        raise SystemExit("PPO requires torch; run `uv sync` to install the locked dependency") from exc
+        raise SystemExit(
+            "PPO training requires the train extra; "
+            "install `breakout-turbo-env[train]`"
+        ) from exc
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)

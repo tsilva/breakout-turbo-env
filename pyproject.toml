@@ -12,14 +12,18 @@ license = { text = "MIT" }
 dependencies = [
   "gymnasium>=1.1,<2",
   "numpy>=1.26,<3",
-  "pygame==2.6.1",
-  "torch==2.7.1",
 ]
 
 [project.scripts]
 breakout-turbo-env = "breakout_turbo_env.cli:main"
 
 [project.optional-dependencies]
+play = [
+  "pygame>=2.6,<3",
+]
+train = [
+  "torch>=2.7,<3",
+]
 dev = [
   "cibuildwheel>=2.23.4,<4",
   "maturin>=1.8,<2",
