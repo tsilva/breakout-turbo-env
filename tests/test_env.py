@@ -45,6 +45,22 @@ def test_masked_reset_preserves_unselected_lane_exactly():
     assert before[2] != after[2]
 
 
+def test_info_presence_masks_follow_the_configured_filter():
+    all_info = make_env(info_filter="all")
+    all_info.reset()
+    _, _, terminated, _, infos = all_info.step(np.zeros(4, dtype=np.uint8))
+    assert not terminated.any()
+    assert infos["_bricks_remaining"].all()
+    assert infos["_lives"].all()
+
+    terminal_info = make_env(info_filter="terminal")
+    terminal_info.reset()
+    _, _, terminated, _, infos = terminal_info.step(np.zeros(4, dtype=np.uint8))
+    assert not terminated.any()
+    assert not infos["_bricks_remaining"].any()
+    assert not infos["_lives"].any()
+
+
 def test_snapshot_replay_is_byte_exact():
     env = make_env(frame_skip=1)
     env.reset()

@@ -241,7 +241,7 @@ class BreakoutVecEnv(VectorEnv):
             self._info_mode != "none",
         )
         self._last_signals = signals
-        return self._obs(observations), rewards, terminated, truncated, self._infos(signals, terminated)
+        return self._obs(observations), rewards, terminated, truncated, self._infos(signals)
 
     def active_state_indices(self) -> np.ndarray:
         return self._active_state_indices
