@@ -70,7 +70,7 @@ def test_episode_stats_are_printed(capsys):
     assert "outcome=cleared" in output
     assert "score=48" in output
     assert "return=48.0" in output
-    assert "bricks_cleared=48" in output
+    assert "bricks_cleared=108" in output
     assert "native_ticks=1234" in output
 
 

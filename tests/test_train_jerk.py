@@ -36,16 +36,16 @@ def test_train_generation_retains_only_actions():
         rng=np.random.default_rng(1),
     )
     assert candidate.actions
-    assert set(candidate.actions) <= {0, 1, 2}
+    assert set(candidate.actions) <= {0, 1, 2, 3}
     assert not hasattr(candidate, "state")
 
 
 def test_saved_policy_contains_actions_but_no_state(tmp_path):
-    candidate = train_jerk.Candidate(actions=[0, 1, 2], score=1, reward=1.0, lives=3, solved=False)
+    candidate = train_jerk.Candidate(actions=[0, 1, 2, 3], score=1, reward=1.0, lives=5, solved=False)
     output = tmp_path / "policy.json"
     train_jerk.save_policy(output, candidate, layout="full", frame_skip=1, seed=7)
     payload = json.loads(output.read_text())
-    assert payload["actions"] == [0, 1, 2]
+    assert payload["actions"] == [0, 1, 2, 3]
     assert not any("state" in key.lower() for key in payload)
 
 

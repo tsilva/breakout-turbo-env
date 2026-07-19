@@ -30,6 +30,7 @@ _SIGNAL_NAMES = (
     "layout_id",
     "collision_events",
     "pending_reset",
+    "awaiting_fire",
 )
 _START_IDS = ("full", "checker", "tunnel", "sparse")
 _ATARI_2600_NTSC_PALETTE = np.array(
@@ -136,8 +137,8 @@ class BreakoutVecEnv(VectorEnv):
         self.autoreset_mode = AutoresetMode.DISABLED
         self.render_mode = render_mode
         self.initial_state_names = _START_IDS
-        self.single_action_space = gym.spaces.Discrete(3)
-        self.action_space = gym.spaces.MultiDiscrete(np.full(num_envs, 3, dtype=np.int64))
+        self.single_action_space = gym.spaces.Discrete(4)
+        self.action_space = gym.spaces.MultiDiscrete(np.full(num_envs, 4, dtype=np.int64))
         self.single_observation_space = gym.spaces.Box(
             0, 255, shape=(frame_stack, obs_h, obs_w), dtype=np.uint8
         )
@@ -293,7 +294,7 @@ class BreakoutVecEnv(VectorEnv):
             raise ValueError(f"configure_lane requires {sorted(required)}")
         self.native.configure_lane(int(lane), *(int(state[name]) for name in ordered))
 
-    def branch(self, states: Sequence[bytes], actions: Sequence[int] = (0, 1, 2)) -> dict[str, Any]:
+    def branch(self, states: Sequence[bytes], actions: Sequence[int] = (0, 1, 2, 3)) -> dict[str, Any]:
         action_values = np.asarray(actions, dtype=np.uint8)
         next_states, flat_obs, rewards, terminated, flat_signals = self.native.branch(
             list(states), action_values.tolist()

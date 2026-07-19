@@ -29,12 +29,12 @@ def _write_policy(path: Path, *, algorithm: str = "PPO") -> None:
     np.savez_compressed(
         path,
         metadata_json=np.asarray(json.dumps(metadata)),
-        trunk__0__weight=np.zeros((64, 5), dtype=np.float32),
+        trunk__0__weight=np.zeros((64, 6), dtype=np.float32),
         trunk__0__bias=np.zeros(64, dtype=np.float32),
         trunk__2__weight=np.zeros((64, 64), dtype=np.float32),
         trunk__2__bias=np.zeros(64, dtype=np.float32),
-        actor__weight=np.zeros((3, 64), dtype=np.float32),
-        actor__bias=np.zeros(3, dtype=np.float32),
+        actor__weight=np.zeros((4, 64), dtype=np.float32),
+        actor__bias=np.zeros(4, dtype=np.float32),
     )
 
 
@@ -46,6 +46,7 @@ def test_load_policy_and_choose_an_action(tmp_path):
     assert policy.action({
         "paddle_x": np.array([0]), "ball_x": np.array([0]), "ball_y": np.array([0]),
         "ball_vx": np.array([0]), "ball_vy": np.array([0]),
+        "awaiting_fire": np.array([0]),
     }).tolist() == [0]
 
 

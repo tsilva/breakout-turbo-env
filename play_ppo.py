@@ -56,7 +56,7 @@ def load_policy(path: Path) -> PpoPolicy:
             weights = {name: artifact[name].astype(np.float32, copy=True) for name in required}
         except KeyError as exc:
             raise ValueError(f"PPO policy is missing {exc.args[0]}") from exc
-    if weights["trunk__0__weight"].shape[1] != _FEATURES or weights["actor__weight"].shape[0] != 3:
+    if weights["trunk__0__weight"].shape[1] != _FEATURES or weights["actor__weight"].shape[0] != 4:
         raise ValueError("PPO policy has incompatible network dimensions")
     return PpoPolicy(layout=metadata["layout"], frame_skip=metadata["frame_skip"], weights=weights)
 

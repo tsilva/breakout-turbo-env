@@ -50,8 +50,10 @@ def load_policy(path: Path) -> JerkPolicy:
     actions = payload.get("actions")
     if not isinstance(actions, list) or not actions:
         raise ValueError("policy actions must be a non-empty list")
-    if any(not isinstance(action, int) or isinstance(action, bool) or action not in (0, 1, 2) for action in actions):
-        raise ValueError("every policy action must be 0 (noop), 1 (left), or 2 (right)")
+    if any(not isinstance(action, int) or isinstance(action, bool) or action not in (0, 1, 2, 3) for action in actions):
+        raise ValueError(
+            "every policy action must be 0 (noop), 1 (FIRE), 2 (right), or 3 (left)"
+        )
     return JerkPolicy(actions=tuple(actions), layout=layout, frame_skip=frame_skip)
 
 

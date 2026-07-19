@@ -6,35 +6,119 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
-const RAW_W: usize = 96;
-const RAW_H: usize = 96;
+const RAW_W: usize = 160;
+const RAW_H: usize = 210;
 const RENDER_W: usize = 160;
 const RENDER_H: usize = 210;
 const FP: i32 = 1 << 16;
-const BALL_R: i32 = FP;
-const PADDLE_W: i32 = 18 * FP;
-const PADDLE_H: i32 = 2 * FP;
-const PADDLE_Y: i32 = 90 * FP;
-const PADDLE_SPEED: i32 = 3 * FP;
-const BALL_SPEED_X: i32 = FP / 2;
-const BALL_SPEED_Y: i32 = FP;
-const BRICK_COLS: usize = 8;
+const BRICK_COLS: usize = 18;
 const BRICK_ROWS: usize = 6;
 const BRICK_ROW_POINTS: [i32; BRICK_ROWS] = [7, 7, 4, 4, 1, 1];
-const BRICK_W: i32 = 10 * FP;
-const BRICK_H: i32 = 4 * FP;
-const BRICK_GAP_X: i32 = 1 * FP;
-const BRICK_GAP_Y: i32 = 1 * FP;
-const BRICK_X0: i32 = 4 * FP;
-const BRICK_Y0: i32 = 7 * FP;
-const FULL_BRICKS: u64 = (1u64 << (BRICK_COLS * BRICK_ROWS)) - 1;
-const SIGNALS: usize = 13;
+const FULL_BRICKS: u128 = (1u128 << (BRICK_COLS * BRICK_ROWS)) - 1;
+const SIGNALS: usize = 14;
 
 const COLLISION_WALL: i64 = 1;
 const COLLISION_PADDLE: i64 = 2;
 const COLLISION_BRICK: i64 = 4;
 const COLLISION_LOSS: i64 = 8;
-const COLLISION_CLEAR: i64 = 16;
+
+// Stable Retro's Stella paddle is an RC circuit driven by a digital key-repeat
+// emulation.  Breakout samples that circuit once per two-line kernel.  These
+// are the exact lower charge boundaries of the ROM-visible measurement for
+// every charge reachable through Stella's digital left/right controls.
+const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
+    (1, 0),
+    (272, 12),
+    (295, 14),
+    (318, 16),
+    (341, 18),
+    (366, 20),
+    (388, 22),
+    (411, 24),
+    (447, 26),
+    (470, 28),
+    (493, 30),
+    (516, 32),
+    (539, 34),
+    (563, 36),
+    (586, 38),
+    (609, 40),
+    (633, 42),
+    (657, 44),
+    (680, 46),
+    (703, 48),
+    (733, 50),
+    (757, 52),
+    (780, 54),
+    (803, 56),
+    (828, 58),
+    (851, 60),
+    (874, 62),
+    (897, 64),
+    (920, 66),
+    (943, 68),
+    (966, 70),
+    (991, 72),
+    (1013, 74),
+    (1036, 76),
+    (1060, 78),
+    (1083, 80),
+    (1107, 82),
+    (1130, 84),
+    (1157, 86),
+    (1180, 88),
+    (1203, 90),
+    (1228, 92),
+    (1251, 94),
+    (1274, 96),
+    (1297, 98),
+    (1320, 100),
+    (1343, 102),
+    (1366, 104),
+    (1391, 106),
+    (1413, 108),
+    (1436, 110),
+    (1460, 112),
+    (1483, 114),
+    (1507, 116),
+    (1530, 118),
+    (1553, 120),
+    (1576, 122),
+    (1599, 124),
+    (1624, 126),
+    (1647, 128),
+    (1670, 130),
+    (1693, 132),
+    (1716, 134),
+    (1739, 136),
+    (1762, 138),
+    (1786, 140),
+    (1809, 142),
+    (1832, 144),
+    (1857, 146),
+    (1880, 148),
+    (1903, 150),
+    (1926, 152),
+    (1949, 154),
+    (1972, 156),
+    (1995, 158),
+    (2020, 160),
+    // The startup charge ramp reaches values unavailable once Stella's
+    // repeat acceleration locks to 25; 2039 is the observed central boundary.
+    (2039, 162),
+    (2066, 164),
+    (2088, 166),
+    (2112, 168),
+    (2135, 170),
+    (2158, 172),
+    (2182, 174),
+    (2205, 176),
+    (2228, 178),
+    (2253, 180),
+    (2276, 182),
+    (2299, 184),
+    (2322, 186),
+];
 
 #[derive(Clone, Copy)]
 struct FastAreaPixel {
@@ -62,59 +146,71 @@ struct Lane {
     ball_y: i32,
     ball_vx: i32,
     ball_vy: i32,
-    bricks: u64,
+    bricks: u128,
     score: i32,
+    hud_score: i32,
     lives: i32,
+    hud_lives: i32,
     tick: u64,
     layout_id: i32,
     pending_reset: bool,
     last_collision: i64,
+    awaiting_fire: bool,
+    collision_latches: u8,
+    collision_count: u8,
+    steep_angle: bool,
+    brick_contact: bool,
+    paddle_charge: u16,
+    paddle_repeat: u8,
+    paddle_held: bool,
+    paddle_measure: u8,
     stack: Vec<u8>,
     stack_head: usize,
     raw_scratch: Vec<u8>,
-    brick_layer: Vec<u8>,
-    rendered_paddle_x: usize,
-    rendered_ball_x: usize,
-    rendered_ball_y: usize,
-    render_initialized: bool,
 }
 
 impl Lane {
     fn new(stack_size: usize) -> Self {
         Self {
-            paddle_x: ((RAW_W as i32 * FP) - PADDLE_W) / 2,
-            ball_x: RAW_W as i32 * FP / 2,
-            ball_y: 82 * FP,
-            ball_vx: BALL_SPEED_X,
-            ball_vy: -BALL_SPEED_Y,
+            paddle_x: 115 * FP,
+            ball_x: 80 * FP,
+            ball_y: 122 * FP,
+            ball_vx: FP,
+            ball_vy: FP,
             bricks: FULL_BRICKS,
             score: 0,
-            lives: 3,
+            hud_score: 0,
+            lives: 5,
+            hud_lives: 5,
             tick: 0,
             layout_id: 0,
             pending_reset: false,
             last_collision: 0,
+            awaiting_fire: true,
+            collision_latches: 0,
+            collision_count: 0,
+            steep_angle: true,
+            brick_contact: false,
+            paddle_charge: 2048,
+            paddle_repeat: 0,
+            paddle_held: false,
+            paddle_measure: 162,
             stack: vec![0; stack_size],
             stack_head: 0,
             raw_scratch: vec![0; RAW_W * RAW_H],
-            brick_layer: vec![0; RAW_W * RAW_H],
-            rendered_paddle_x: 0,
-            rendered_ball_x: 0,
-            rendered_ball_y: 0,
-            render_initialized: false,
         }
     }
 }
 
-fn layout_mask(layout_id: i32) -> Option<u64> {
+fn layout_mask(layout_id: i32) -> Option<u128> {
     match layout_id {
         0 => Some(FULL_BRICKS),
         1 => {
-            let mut mask = 0u64;
+            let mut mask = 0u128;
             for row in 0..BRICK_ROWS {
                 for col in 0..BRICK_COLS {
                     if (row + col) % 2 == 0 {
-                        mask |= 1u64 << (row * BRICK_COLS + col);
+                        mask |= 1u128 << (row * BRICK_COLS + col);
                     }
                 }
             }
@@ -123,16 +219,16 @@ fn layout_mask(layout_id: i32) -> Option<u64> {
         2 => {
             let mut mask = FULL_BRICKS;
             for row in 1..BRICK_ROWS {
-                mask &= !(1u64 << (row * BRICK_COLS + 3));
-                mask &= !(1u64 << (row * BRICK_COLS + 4));
+                mask &= !(1u128 << (row * BRICK_COLS + 8));
+                mask &= !(1u128 << (row * BRICK_COLS + 9));
             }
             Some(mask)
         }
         3 => {
-            let mut mask = 0u64;
+            let mut mask = 0u128;
             for col in 0..BRICK_COLS {
-                mask |= 1u64 << col;
-                mask |= 1u64 << ((BRICK_ROWS - 1) * BRICK_COLS + col);
+                mask |= 1u128 << col;
+                mask |= 1u128 << ((BRICK_ROWS - 1) * BRICK_COLS + col);
             }
             Some(mask)
         }
@@ -141,21 +237,31 @@ fn layout_mask(layout_id: i32) -> Option<u64> {
 }
 
 fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_stack: usize) {
-    lane.paddle_x = ((RAW_W as i32 * FP) - PADDLE_W) / 2;
-    lane.ball_x = RAW_W as i32 * FP / 2;
-    lane.ball_y = 82 * FP;
-    lane.ball_vx = BALL_SPEED_X;
-    lane.ball_vy = -BALL_SPEED_Y;
+    lane.paddle_x = 115 * FP;
+    lane.ball_x = 80 * FP;
+    lane.ball_y = 122 * FP;
+    lane.ball_vx = FP;
+    lane.ball_vy = FP;
     lane.bricks = layout_mask(layout_id).expect("validated layout");
     lane.score = 0;
-    lane.lives = 3;
+    lane.hud_score = 0;
+    lane.lives = 5;
+    lane.hud_lives = 5;
     lane.tick = 0;
     lane.layout_id = layout_id;
     lane.pending_reset = false;
     lane.last_collision = 0;
+    lane.awaiting_fire = true;
+    lane.collision_latches = 0;
+    lane.collision_count = 0;
+    lane.steep_angle = true;
+    lane.brick_contact = false;
+    lane.paddle_charge = 2048;
+    lane.paddle_repeat = 0;
+    lane.paddle_held = false;
+    lane.paddle_measure = 162;
     lane.stack.fill(0);
     lane.stack_head = 0;
-    lane.render_initialized = false;
     let plane = preprocess.out_h * preprocess.out_w;
     render_and_push(lane, preprocess, frame_stack);
     for slot in 1..frame_stack {
@@ -167,170 +273,227 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
 fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
     let score_before = lane.score;
     lane.last_collision = 0;
-    match action {
-        1 => lane.paddle_x -= PADDLE_SPEED,
-        2 => lane.paddle_x += PADDLE_SPEED,
-        _ => {}
+    lane.hud_score = lane.score;
+    let collision_paddle_x = lane.paddle_x;
+    update_paddle(lane, action);
+    if lane.brick_contact {
+        let y = lane.ball_y / FP;
+        if y > 93 || y + 3 < 56 {
+            lane.brick_contact = false;
+        }
     }
-    lane.paddle_x = lane.paddle_x.clamp(0, RAW_W as i32 * FP - PADDLE_W);
 
-    // Fixed microsteps make collision behavior deterministic and prevent tunnelling.
-    const MICROSTEPS: i32 = 4;
-    for _ in 0..MICROSTEPS {
-        let previous_x = lane.ball_x;
-        let previous_y = lane.ball_y;
-        lane.ball_x += lane.ball_vx / MICROSTEPS;
-        lane.ball_y += lane.ball_vy / MICROSTEPS;
+    if lane.awaiting_fire {
+        lane.hud_lives = lane.lives;
+        if action == 1 {
+            let serve = ((lane.tick + 2) & 3) as usize;
+            let serve_x = [16, 78, 80, 142][serve];
+            lane.awaiting_fire = false;
+            lane.ball_x = serve_x * FP;
+            lane.ball_y = 122 * FP;
+            lane.ball_vx = if serve & 1 == 0 { FP } else { -FP };
+            lane.ball_vy = FP;
+            lane.collision_latches = 0;
+            lane.collision_count = 0;
+            lane.steep_angle = true;
+            lane.brick_contact = false;
+        }
+        lane.tick += 1;
+        return (0.0, false);
+    }
 
-        if lane.ball_x - BALL_R <= 0 {
-            lane.ball_x = BALL_R;
+    if lane.ball_y / FP >= 217 {
+        lane.lives -= 1;
+        lane.awaiting_fire = true;
+        lane.ball_y = 9 * FP;
+        lane.collision_latches = 0;
+        lane.last_collision |= COLLISION_LOSS;
+        lane.tick += 1;
+        if lane.lives <= 0 {
+            lane.pending_reset = true;
+            return ((lane.score - score_before) as f32, true);
+        }
+        return ((lane.score - score_before) as f32, false);
+    }
+
+    // The ROM consumes collision latches produced by the preceding raster
+    // frame.  This one-frame delay is essential at wall/brick corners.
+    if lane.collision_latches & 4 != 0 {
+        let x = lane.ball_x / FP;
+        if (x <= 8 && lane.ball_vx < 0) || (x >= 150 && lane.ball_vx > 0) {
+            lane.ball_vx = -lane.ball_vx;
+            lane.last_collision |= COLLISION_WALL;
+        }
+    }
+    if lane.collision_latches & 1 != 0 {
+        let y = lane.ball_y / FP;
+        if y < 49 {
+            lane.brick_contact = false;
+            if lane.ball_vy < 0 {
+                lane.ball_vy = -lane.ball_vy;
+                lane.last_collision |= COLLISION_WALL;
+            }
+        } else if !lane.brick_contact {
+            let index = brick_at_ball(lane);
+            if visible_bricks(lane) & (1u128 << index) != 0 {
+                lane.bricks &= !(1u128 << index);
+                lane.score += BRICK_ROW_POINTS[index / BRICK_COLS];
+                lane.ball_vy = -lane.ball_vy;
+                lane.brick_contact = true;
+                lane.last_collision |= COLLISION_BRICK;
+            }
+        }
+    }
+    if lane.collision_latches & 2 != 0 && lane.ball_vy > 0 {
+        let relative = (collision_paddle_x + 6 * FP - lane.ball_x) / FP;
+        if relative < 0 {
             lane.ball_vx = lane.ball_vx.abs();
-            lane.last_collision |= COLLISION_WALL;
-        } else if lane.ball_x + BALL_R >= RAW_W as i32 * FP {
-            lane.ball_x = RAW_W as i32 * FP - BALL_R;
+        } else if relative > 0 {
             lane.ball_vx = -lane.ball_vx.abs();
-            lane.last_collision |= COLLISION_WALL;
+        } else {
+            lane.ball_x += if lane.ball_vx < 0 { 4 * FP } else { -4 * FP };
         }
-        if lane.ball_y - BALL_R <= 0 {
-            lane.ball_y = BALL_R;
-            lane.ball_vy = lane.ball_vy.abs();
-            lane.last_collision |= COLLISION_WALL;
+        if relative != 0 {
+            lane.steep_angle = (1..=4).contains(&relative.abs());
         }
-
-        let paddle_right = lane.paddle_x + PADDLE_W;
-        if lane.ball_vy > 0
-            && lane.ball_y + BALL_R >= PADDLE_Y
-            && lane.ball_y - BALL_R <= PADDLE_Y + PADDLE_H
-            && lane.ball_x + BALL_R >= lane.paddle_x
-            && lane.ball_x - BALL_R <= paddle_right
-        {
-            lane.ball_y = PADDLE_Y - BALL_R;
-            lane.ball_vy = -lane.ball_vy.abs();
-            let paddle_center = lane.paddle_x + PADDLE_W / 2;
-            let offset = lane.ball_x - paddle_center;
-            lane.ball_vx = (BALL_SPEED_X + offset / 8).clamp(-2 * FP, 2 * FP);
-            if lane.ball_vx == 0 {
-                lane.ball_vx = if offset < 0 { -FP / 2 } else { FP / 2 };
-            }
-            lane.last_collision |= COLLISION_PADDLE;
-        }
-
-        if let Some(index) = colliding_brick(lane.ball_x, lane.ball_y, lane.bricks) {
-            lane.bricks &= !(1u64 << index);
-            clear_brick_from_render_cache(lane, index);
-            bounce_from_brick(lane, index, previous_x, previous_y);
-            lane.score += BRICK_ROW_POINTS[index / BRICK_COLS];
-            lane.last_collision |= COLLISION_BRICK;
-        }
-
-        if lane.ball_y - BALL_R >= RAW_H as i32 * FP {
-            lane.lives -= 1;
-            lane.last_collision |= COLLISION_LOSS;
-            if lane.lives <= 0 {
-                lane.pending_reset = true;
-                lane.tick += 1;
-                return ((lane.score - score_before) as f32, true);
-            }
-            lane.ball_x = RAW_W as i32 * FP / 2;
-            lane.ball_y = 82 * FP;
-            lane.ball_vx = BALL_SPEED_X;
-            lane.ball_vy = -BALL_SPEED_Y;
-            break;
-        }
+        lane.collision_count = (lane.collision_count + 1).min(12);
+        apply_atari_speed(lane);
+        lane.ball_vy = -lane.ball_vy.abs();
+        lane.last_collision |= COLLISION_PADDLE;
     }
+
+    lane.ball_x += lane.ball_vx;
+    lane.ball_y += lane.ball_vy;
+
+    lane.collision_latches = raster_collision_latches(lane);
     lane.tick += 1;
-    if lane.bricks == 0 {
-        lane.last_collision |= COLLISION_CLEAR;
-        lane.pending_reset = true;
-        return ((lane.score - score_before) as f32, true);
-    }
     ((lane.score - score_before) as f32, false)
 }
 
-fn colliding_brick(x: i32, y: i32, mask: u64) -> Option<usize> {
-    let cell_w = BRICK_W + BRICK_GAP_X;
-    let cell_h = BRICK_H + BRICK_GAP_Y;
-    let min_x = x - BALL_R - BRICK_X0;
-    let max_x = x + BALL_R - BRICK_X0;
-    let min_y = y - BALL_R - BRICK_Y0;
-    let max_y = y + BALL_R - BRICK_Y0;
-    if max_x < 0
-        || max_y < 0
-        || min_x > BRICK_COLS as i32 * cell_w
-        || min_y > BRICK_ROWS as i32 * cell_h
-    {
-        return None;
-    }
-    let min_col = (min_x.max(0) / cell_w).min(BRICK_COLS as i32 - 1) as usize;
-    let max_col = (max_x.max(0) / cell_w).min(BRICK_COLS as i32 - 1) as usize;
-    let min_row = (min_y.max(0) / cell_h).min(BRICK_ROWS as i32 - 1) as usize;
-    let max_row = (max_y.max(0) / cell_h).min(BRICK_ROWS as i32 - 1) as usize;
-    for row in min_row..=max_row {
-        for col in min_col..=max_col {
-            let index = row * BRICK_COLS + col;
-            if (mask >> index) & 1 == 0 {
-                continue;
-            }
-            let left = BRICK_X0 + col as i32 * (BRICK_W + BRICK_GAP_X);
-            let top = BRICK_Y0 + row as i32 * (BRICK_H + BRICK_GAP_Y);
-            let right = left + BRICK_W;
-            let bottom = top + BRICK_H;
-            if x + BALL_R >= left
-                && x - BALL_R <= right
-                && y + BALL_R >= top
-                && y - BALL_R <= bottom
-            {
-                return Some(index);
-            }
-        }
-    }
-    None
+fn paddle_measurement(charge: u16) -> u8 {
+    let index = PADDLE_MEASURE_THRESHOLDS.partition_point(|&(lower, _)| lower <= charge);
+    PADDLE_MEASURE_THRESHOLDS[index.saturating_sub(1)].1
 }
 
-fn bounce_from_brick(lane: &mut Lane, index: usize, previous_x: i32, previous_y: i32) {
-    let row = index / BRICK_COLS;
-    let col = index % BRICK_COLS;
-    let left = BRICK_X0 + col as i32 * (BRICK_W + BRICK_GAP_X);
-    let top = BRICK_Y0 + row as i32 * (BRICK_H + BRICK_GAP_Y);
-    let right = left + BRICK_W;
-    let bottom = top + BRICK_H;
+fn charge_for_paddle_measurement(measurement: u8) -> u16 {
+    PADDLE_MEASURE_THRESHOLDS
+        .iter()
+        .min_by_key(|&&(_, value)| value.abs_diff(measurement))
+        .map(|&(charge, _)| charge)
+        .unwrap_or(2048)
+}
 
-    if previous_y + BALL_R <= top {
-        lane.ball_y = top - BALL_R;
-        lane.ball_vy = -lane.ball_vy.abs();
-    } else if previous_y - BALL_R >= bottom {
-        lane.ball_y = bottom + BALL_R;
-        lane.ball_vy = lane.ball_vy.abs();
-    } else if previous_x + BALL_R <= left {
-        lane.ball_x = left - BALL_R;
-        lane.ball_vx = -lane.ball_vx.abs();
-    } else if previous_x - BALL_R >= right {
-        lane.ball_x = right + BALL_R;
-        lane.ball_vx = lane.ball_vx.abs();
-    } else {
-        let horizontal_penetration =
-            (lane.ball_x + BALL_R - left).min(right - (lane.ball_x - BALL_R));
-        let vertical_penetration =
-            (lane.ball_y + BALL_R - top).min(bottom - (lane.ball_y - BALL_R));
-        if vertical_penetration <= horizontal_penetration {
-            lane.ball_vy = -lane.ball_vy;
-        } else {
-            lane.ball_vx = -lane.ball_vx;
+fn update_paddle(lane: &mut Lane, action: u8) {
+    // The ROM first smooths the prior frame's measured controller value.
+    let raw_x = lane.paddle_x / FP + 47;
+    let target = 235 - lane.paddle_measure as i32;
+    let next_raw = ((raw_x + target) / 2).clamp(55, 191);
+    lane.paddle_x = (next_raw - 47) * FP;
+
+    if lane.paddle_held {
+        lane.paddle_repeat += 1;
+        if lane.paddle_repeat > 5 {
+            lane.paddle_repeat = 25;
         }
     }
+    match action {
+        2 if lane.paddle_charge > lane.paddle_repeat as u16 => {
+            lane.paddle_charge -= lane.paddle_repeat as u16;
+        }
+        3 if lane.paddle_charge + (lane.paddle_repeat as u16) < 3856 => {
+            lane.paddle_charge += lane.paddle_repeat as u16;
+        }
+        _ => {}
+    }
+    lane.paddle_held = matches!(action, 2 | 3);
+    lane.paddle_measure = paddle_measurement(lane.paddle_charge);
+}
+
+fn brick_at_ball(lane: &Lane) -> usize {
+    let x = lane.ball_x / FP;
+    let y = lane.ball_y / FP;
+    let col = ((x - 8).max(0) / 8).min(17) as usize;
+    let row = ((y - 59).max(0) / 6).min(5) as usize;
+    row * BRICK_COLS + col
+}
+
+fn visible_bricks(lane: &Lane) -> u128 {
+    if lane.tick > 35 {
+        return lane.bricks;
+    }
+    let mut mask = lane.bricks;
+    for phase in 0..=lane.tick as usize {
+        let byte = 35 - phase;
+        let row = 5 - byte % 6;
+        let (first, last) = match byte / 6 {
+            5 => (0, 0),
+            4 => (1, 4),
+            3 => (5, 8),
+            2 => (9, 10),
+            1 => (11, 14),
+            _ => (15, 17),
+        };
+        for column in first..=last {
+            mask &= !(1u128 << (row * BRICK_COLS + column));
+        }
+    }
+    mask
+}
+
+fn apply_atari_speed(lane: &mut Lane) {
+    let group = (lane.collision_count / 4).min(3);
+    let (x, y) = match (group, lane.steep_angle) {
+        (0, false) => (3 * FP / 2, FP),
+        (0, true) => (FP, 3 * FP / 2),
+        (1, false) => (3 * FP / 2, 2 * FP),
+        (1, true) => (FP / 2, 2 * FP),
+        (2, _) => (2 * FP, FP),
+        _ => (2 * FP, 2 * FP),
+    };
+    lane.ball_vx = if lane.ball_vx < 0 { -x } else { x };
+    lane.ball_vy = if lane.ball_vy < 0 { -y } else { y };
+}
+
+fn raster_collision_latches(lane: &Lane) -> u8 {
+    let x = lane.ball_x / FP;
+    let y = lane.ball_y / FP;
+    let mut result = 0u8;
+    if x <= 7 || x >= 151 {
+        result |= 4;
+    }
+    if y <= 33 {
+        result |= 1;
+    } else {
+        for row in 0..BRICK_ROWS {
+            let top = 57 + row as i32 * 6;
+            let bottom = top + 5;
+            if y + 3 >= top - 1 && y <= bottom + 1 {
+                let col = ((x - 8).max(0) / 8).min(17) as usize;
+                if visible_bricks(lane) & (1u128 << (row * BRICK_COLS + col)) != 0 {
+                    result |= 1;
+                    break;
+                }
+            }
+        }
+    }
+    let paddle_x = lane.paddle_x / FP;
+    if y + 3 >= 189 && y <= 192 && x + 1 >= paddle_x && x <= paddle_x + 15 {
+        result |= 2;
+    }
+    result
 }
 
 const DIGITS: [[u8; 5]; 10] = [
     [0b111, 0b101, 0b101, 0b101, 0b111],
-    [0b100, 0b100, 0b100, 0b100, 0b100],
+    [0b010, 0b010, 0b010, 0b010, 0b010],
     [0b111, 0b001, 0b111, 0b100, 0b111],
-    [0b111, 0b001, 0b111, 0b001, 0b111],
+    [0b111, 0b001, 0b011, 0b001, 0b111],
     [0b101, 0b101, 0b111, 0b001, 0b001],
     [0b111, 0b100, 0b111, 0b001, 0b111],
-    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b100, 0b100, 0b111, 0b101, 0b111],
     [0b111, 0b001, 0b001, 0b001, 0b001],
     [0b111, 0b101, 0b111, 0b101, 0b111],
-    [0b111, 0b101, 0b111, 0b001, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b001],
 ];
 
 fn draw_digit(frame: &mut [u8], digit: usize, x0: usize) {
@@ -346,26 +509,17 @@ fn draw_digit(frame: &mut [u8], digit: usize, x0: usize) {
     }
 }
 
-fn render_ball_y(source_y: usize) -> usize {
-    match source_y {
-        0..=7 => 31 + source_y * 26 / 7,
-        8..=35 => 57 + (source_y - 7) * 36 / 28,
-        36..=90 => 93 + (source_y - 35) * 96 / 55,
-        _ => 189 + (source_y - 90) * 20 / 6,
-    }
-}
-
 fn render_indexed(lane: &Lane) -> Vec<u8> {
     let mut frame = vec![0u8; RENDER_W * RENDER_H];
 
     // Atari's status display lives inside the video signal: three score
     // digits, the selected game number, and the current player number.
-    let score = lane.score.clamp(0, 999) as usize;
+    let score = lane.hud_score.clamp(0, 999) as usize;
     draw_digit(&mut frame, score / 100, 36);
     draw_digit(&mut frame, (score / 10) % 10, 52);
     draw_digit(&mut frame, score % 10, 68);
-    draw_digit(&mut frame, (lane.layout_id + 1).clamp(0, 9) as usize, 100);
-    draw_digit(&mut frame, 1, 136);
+    draw_digit(&mut frame, lane.hud_lives.clamp(0, 9) as usize, 100);
+    draw_digit(&mut frame, 1, 132);
 
     // Stella's native frame uses a 15-line header bar and 8-pixel
     // playfield walls in the same neutral gray.
@@ -377,46 +531,65 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
         frame[y * RENDER_W + 152..(y + 1) * RENDER_W].fill(1);
     }
 
-    // TIA playfield pixels meet edge-to-edge, so a complete wall appears as
-    // six uninterrupted color bands. The turbo environment's eight logical
-    // brick columns divide the same 144-pixel playfield without adding gaps.
+    // The TIA playfield resolves the wall into 18 independently destructible
+    // 8x6 cells per row.
     for row in 0..BRICK_ROWS {
         for col in 0..BRICK_COLS {
             let index = row * BRICK_COLS + col;
-            if (lane.bricks >> index) & 1 == 0 {
+            if (visible_bricks(lane) >> index) & 1 == 0 {
                 continue;
             }
-            let x0 = 8 + col * 18;
+            let x0 = 8 + col * 8;
             let y0 = 57 + row * 6;
             for y in y0..y0 + 6 {
-                frame[y * RENDER_W + x0..y * RENDER_W + x0 + 18].fill(2 + row as u8);
+                frame[y * RENDER_W + x0..y * RENDER_W + x0 + 8].fill(2 + row as u8);
             }
         }
     }
 
-    let source_paddle_x = (lane.paddle_x / FP).clamp(0, 78) as usize;
-    // Stella's paddle travels from x=8 through x=144. At the right limit its
-    // final eight pixels merge with the fixed red edge cap.
-    let paddle_x = 8 + source_paddle_x * 136 / 78;
+    let paddle_x = (lane.paddle_x / FP).clamp(8, 144) as usize;
     for y in 189..193 {
         frame[y * RENDER_W + paddle_x..y * RENDER_W + paddle_x + 16].fill(2);
     }
 
-    let source_ball_x = (lane.ball_x / FP).clamp(1, RAW_W as i32 - 1) as usize;
-    let source_ball_y = (lane.ball_y / FP).clamp(0, RAW_H as i32 - 1) as usize;
-    // Preserve all three Stella anchors: left x=8, launch x=80, and right
-    // x=150. The physical arena is asymmetric around its integer launch
-    // center, so each half needs its own linear projection.
-    let ball_x = if source_ball_x <= 48 {
-        8 + ((source_ball_x - 1) * 72 + 46) / 47
-    } else {
-        80 + ((source_ball_x - 48) * 70 + 23) / 47
-    };
-    let ball_y = render_ball_y(source_ball_y)
-        .saturating_sub(2)
-        .min(RENDER_H - 4);
-    for y in ball_y..ball_y + 4 {
-        frame[y * RENDER_W + ball_x..y * RENDER_W + ball_x + 2].fill(2);
+    if !lane.awaiting_fire {
+        let ball_x = (lane.ball_x / FP).max(0) as usize;
+        let ball_y = (lane.ball_y / FP).max(0) as usize;
+        if ball_x < 152 && ball_y < RENDER_H {
+            let visible_x0 = ball_x.max(8);
+            let visible_x1 = (ball_x + 2).min(152);
+            if visible_x0 < visible_x1 {
+                for y in ball_y..(ball_y + 4).min(196) {
+                    if (57..93).contains(&y) {
+                        continue;
+                    }
+                    let scanline_x1 = if y == 195 {
+                        visible_x1.min(47)
+                    } else {
+                        visible_x1
+                    };
+                    for x in visible_x0..scanline_x1 {
+                        let pixel = &mut frame[y * RENDER_W + x];
+                        if *pixel == 0 {
+                            *pixel = 2;
+                        }
+                    }
+                }
+                let band_y0 = ball_y.saturating_sub(1);
+                for y in band_y0..(band_y0 + 4).min(93) {
+                    if y < 57 {
+                        continue;
+                    }
+                    let ball_color = 2 + ((y - 57) / 6) as u8;
+                    for x in visible_x0..visible_x1 {
+                        let pixel = &mut frame[y * RENDER_W + x];
+                        if *pixel == 0 {
+                            *pixel = ball_color;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // The original four-paddle kernel leaves the inactive players clipped at
@@ -445,87 +618,11 @@ fn palette_gray(index: u8) -> u8 {
     }
 }
 
-fn initialize_render_cache(lane: &mut Lane) {
-    lane.brick_layer.fill(0);
-    for row in 0..BRICK_ROWS {
-        for col in 0..BRICK_COLS {
-            let index = row * BRICK_COLS + col;
-            if (lane.bricks >> index) & 1 == 0 {
-                continue;
-            }
-            let x0 = 4 + col * 11;
-            let y0 = 7 + row * 5;
-            let value = palette_gray(3 + row as u8);
-            for y in y0..(y0 + 4).min(RAW_H) {
-                lane.brick_layer[y * RAW_W + x0..y * RAW_W + (x0 + 10).min(RAW_W)].fill(value);
-            }
-        }
-    }
-    lane.raw_scratch.copy_from_slice(&lane.brick_layer);
-    lane.render_initialized = true;
-}
-
-fn clear_brick_from_render_cache(lane: &mut Lane, index: usize) {
-    if !lane.render_initialized {
-        return;
-    }
-    let row = index / BRICK_COLS;
-    let col = index % BRICK_COLS;
-    let x0 = 4 + col * 11;
-    let y0 = 7 + row * 5;
-    for y in y0..(y0 + 4).min(RAW_H) {
-        let begin = y * RAW_W + x0;
-        let end = y * RAW_W + (x0 + 10).min(RAW_W);
-        lane.brick_layer[begin..end].fill(0);
-        lane.raw_scratch[begin..end].fill(0);
-    }
-}
-
-fn restore_previous_dynamic_pixels(lane: &mut Lane) {
-    let paddle_y = (PADDLE_Y / FP) as usize;
-    let paddle_h = (PADDLE_H / FP) as usize;
-    let paddle_w = (PADDLE_W / FP) as usize;
-    let paddle_right = (lane.rendered_paddle_x + paddle_w).min(RAW_W);
-    for y in paddle_y..paddle_y + paddle_h {
-        let begin = y * RAW_W + lane.rendered_paddle_x;
-        let end = y * RAW_W + paddle_right;
-        lane.raw_scratch[begin..end].copy_from_slice(&lane.brick_layer[begin..end]);
-    }
-
-    let left = lane.rendered_ball_x.saturating_sub(1);
-    let right = (lane.rendered_ball_x + 1).min(RAW_W - 1);
-    let top = lane.rendered_ball_y.saturating_sub(1);
-    let bottom = (lane.rendered_ball_y + 1).min(RAW_H - 1);
-    for y in top..=bottom {
-        let begin = y * RAW_W + left;
-        let end = y * RAW_W + right + 1;
-        lane.raw_scratch[begin..end].copy_from_slice(&lane.brick_layer[begin..end]);
-    }
-}
-
 fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
-    if lane.render_initialized {
-        restore_previous_dynamic_pixels(lane);
-    } else {
-        initialize_render_cache(lane);
+    let indexed = render_indexed(lane);
+    for (destination, source) in lane.raw_scratch.iter_mut().zip(indexed) {
+        *destination = palette_gray(source);
     }
-    let px = (lane.paddle_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
-    let paddle_y = (PADDLE_Y / FP) as usize;
-    let paddle_h = (PADDLE_H / FP) as usize;
-    let paddle_w = (PADDLE_W / FP) as usize;
-    for y in paddle_y..paddle_y + paddle_h {
-        lane.raw_scratch[y * RAW_W + px..y * RAW_W + (px + paddle_w).min(RAW_W)]
-            .fill(palette_gray(1));
-    }
-    let bx = (lane.ball_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
-    let by = (lane.ball_y / FP).clamp(0, RAW_H as i32 - 1) as usize;
-    for y in by.saturating_sub(1)..=(by + 1).min(RAW_H - 1) {
-        lane.raw_scratch[y * RAW_W + bx.saturating_sub(1)..y * RAW_W + (bx + 2).min(RAW_W)]
-            .fill(palette_gray(2));
-    }
-    lane.rendered_paddle_x = px;
-    lane.rendered_ball_x = bx;
-    lane.rendered_ball_y = by;
     let raw = &mut lane.raw_scratch;
     let [top, bottom, left, right] = preprocess.crop;
     let (source_y, source_x) = if preprocess.mask_crop {
@@ -627,12 +724,19 @@ fn write_signals(lane: &Lane, dst: &mut [i64]) {
     dst[10] = lane.layout_id as i64;
     dst[11] = lane.last_collision;
     dst[12] = lane.pending_reset as i64;
+    dst[13] = lane.awaiting_fire as i64;
 }
 
 fn put_i32(dst: &mut Vec<u8>, value: i32) {
     dst.extend_from_slice(&value.to_le_bytes());
 }
 fn put_u64(dst: &mut Vec<u8>, value: u64) {
+    dst.extend_from_slice(&value.to_le_bytes());
+}
+fn put_u128(dst: &mut Vec<u8>, value: u128) {
+    dst.extend_from_slice(&value.to_le_bytes());
+}
+fn put_u16(dst: &mut Vec<u8>, value: u16) {
     dst.extend_from_slice(&value.to_le_bytes());
 }
 fn take_i32(src: &[u8], offset: &mut usize) -> Result<i32, &'static str> {
@@ -653,10 +757,28 @@ fn take_u64(src: &[u8], offset: &mut usize) -> Result<u64, &'static str> {
     *offset += 8;
     Ok(u64::from_le_bytes(bytes))
 }
+fn take_u128(src: &[u8], offset: &mut usize) -> Result<u128, &'static str> {
+    let bytes: [u8; 16] = src
+        .get(*offset..*offset + 16)
+        .ok_or("state is truncated")?
+        .try_into()
+        .unwrap();
+    *offset += 16;
+    Ok(u128::from_le_bytes(bytes))
+}
+fn take_u16(src: &[u8], offset: &mut usize) -> Result<u16, &'static str> {
+    let bytes: [u8; 2] = src
+        .get(*offset..*offset + 2)
+        .ok_or("state is truncated")?
+        .try_into()
+        .unwrap();
+    *offset += 2;
+    Ok(u16::from_le_bytes(bytes))
+}
 
 fn serialize_lane(lane: &Lane) -> Vec<u8> {
     let mut out = Vec::with_capacity(64 + lane.stack.len());
-    out.extend_from_slice(b"BTO1");
+    out.extend_from_slice(b"BTO7");
     for value in [
         lane.paddle_x,
         lane.ball_x,
@@ -664,22 +786,33 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
         lane.ball_vx,
         lane.ball_vy,
         lane.score,
+        lane.hud_score,
         lane.lives,
+        lane.hud_lives,
         lane.layout_id,
     ] {
         put_i32(&mut out, value);
     }
-    put_u64(&mut out, lane.bricks);
+    put_u128(&mut out, lane.bricks);
     put_u64(&mut out, lane.tick);
     put_u64(&mut out, lane.last_collision as u64);
     put_u64(&mut out, lane.stack_head as u64);
     out.push(lane.pending_reset as u8);
+    out.push(lane.awaiting_fire as u8);
+    out.push(lane.collision_latches);
+    out.push(lane.collision_count);
+    out.push(lane.steep_angle as u8);
+    out.push(lane.brick_contact as u8);
+    put_u16(&mut out, lane.paddle_charge);
+    out.push(lane.paddle_repeat);
+    out.push(lane.paddle_held as u8);
+    out.push(lane.paddle_measure);
     out.extend_from_slice(&lane.stack);
     out
 }
 
 fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static str> {
-    if data.get(0..4) != Some(b"BTO1") {
+    if data.get(0..4) != Some(b"BTO7") {
         return Err("state has an invalid header");
     }
     let mut offset = 4;
@@ -689,13 +822,32 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     let ball_vx = take_i32(data, &mut offset)?;
     let ball_vy = take_i32(data, &mut offset)?;
     let score = take_i32(data, &mut offset)?;
+    let hud_score = take_i32(data, &mut offset)?;
     let lives = take_i32(data, &mut offset)?;
+    let hud_lives = take_i32(data, &mut offset)?;
     let layout_id = take_i32(data, &mut offset)?;
-    let bricks = take_u64(data, &mut offset)?;
+    let bricks = take_u128(data, &mut offset)?;
     let tick = take_u64(data, &mut offset)?;
     let last_collision = take_u64(data, &mut offset)? as i64;
     let stack_head = take_u64(data, &mut offset)? as usize;
     let pending_reset = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let awaiting_fire = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let collision_latches = *data.get(offset).ok_or("state is truncated")?;
+    offset += 1;
+    let collision_count = *data.get(offset).ok_or("state is truncated")?;
+    offset += 1;
+    let steep_angle = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let brick_contact = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let paddle_charge = take_u16(data, &mut offset)?;
+    let paddle_repeat = *data.get(offset).ok_or("state is truncated")?;
+    offset += 1;
+    let paddle_held = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let paddle_measure = *data.get(offset).ok_or("state is truncated")?;
     offset += 1;
     let stack = data.get(offset..).ok_or("state is truncated")?.to_vec();
     if stack.len() != expected_stack {
@@ -709,19 +861,25 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
         ball_vy,
         bricks,
         score,
+        hud_score,
         lives,
+        hud_lives,
         tick,
         layout_id,
         pending_reset,
         last_collision,
+        awaiting_fire,
+        collision_latches,
+        collision_count,
+        steep_angle,
+        brick_contact,
+        paddle_charge,
+        paddle_repeat,
+        paddle_held,
+        paddle_measure,
         stack,
         stack_head,
         raw_scratch: vec![0; RAW_W * RAW_H],
-        brick_layer: vec![0; RAW_W * RAW_H],
-        rendered_paddle_x: 0,
-        rendered_ball_x: 0,
-        rendered_ball_y: 0,
-        render_initialized: false,
     })
 }
 
@@ -936,9 +1094,9 @@ impl NativeBreakoutVecEnv {
             truncated.len(),
             signals.shape(),
         )?;
-        if let Some(action) = actions.iter().find(|&&action| action > 2) {
+        if let Some(action) = actions.iter().find(|&&action| action > 3) {
             return Err(PyValueError::new_err(format!(
-                "actions must be 0, 1, or 2; got {action}"
+                "actions must be 0, 1, 2, or 3; got {action}"
             )));
         }
         let obs = observations.as_slice_mut()?;
@@ -1044,8 +1202,8 @@ impl NativeBreakoutVecEnv {
         states: Vec<Vec<u8>>,
         actions: Vec<u8>,
     ) -> PyResult<(Vec<Vec<u8>>, Vec<u8>, Vec<f32>, Vec<bool>, Vec<i64>)> {
-        if actions.iter().any(|&action| action > 2) {
-            return Err(PyValueError::new_err("actions must be 0, 1, or 2"));
+        if actions.iter().any(|&action| action > 3) {
+            return Err(PyValueError::new_err("actions must be 0, 1, 2, or 3"));
         }
         let expected = self.frame_stack * self.obs_h * self.obs_w;
         let mut base = Vec::with_capacity(states.len());
@@ -1110,28 +1268,34 @@ impl NativeBreakoutVecEnv {
         ball_y: i32,
         ball_vx: i32,
         ball_vy: i32,
-        bricks: u64,
+        bricks: u128,
         lives: i32,
     ) -> PyResult<()> {
         let target = self
             .lanes
             .get_mut(lane)
             .ok_or_else(|| PyValueError::new_err("lane index out of range"))?;
-        if lives <= 0 || bricks & !FULL_BRICKS != 0 {
-            return Err(PyValueError::new_err(
-                "lives must be positive and bricks must fit the 48-brick mask",
-            ));
+        if lives <= 0 {
+            return Err(PyValueError::new_err("lives must be positive"));
         }
         target.paddle_x = paddle_x;
+        let raw_paddle_x = (paddle_x / FP + 47).clamp(55, 191);
+        target.paddle_measure = (235 - raw_paddle_x) as u8;
+        target.paddle_charge = charge_for_paddle_measurement(target.paddle_measure);
+        target.paddle_repeat = 0;
+        target.paddle_held = false;
         target.ball_x = ball_x;
         target.ball_y = ball_y;
         target.ball_vx = ball_vx;
         target.ball_vy = ball_vy;
         target.bricks = bricks;
+        target.tick = 36;
         target.lives = lives;
         target.pending_reset = false;
         target.last_collision = 0;
-        target.render_initialized = false;
+        target.awaiting_fire = false;
+        target.collision_latches = 0;
+        target.brick_contact = false;
         render_and_push(target, &self.preprocess, self.frame_stack);
         let source_slot = (target.stack_head + self.frame_stack - 1) % self.frame_stack;
         let plane = self.obs_h * self.obs_w;

@@ -15,7 +15,7 @@ import numpy as np
 from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
 
 _LAYOUTS = ("full", "checker", "tunnel", "sparse")
-_FEATURES = 5
+_FEATURES = 6
 _HIDDEN = 64
 
 
@@ -86,11 +86,12 @@ def features(info: dict[str, np.ndarray]) -> np.ndarray:
     """Compact Markov features from the environment's documented native signals."""
     return np.stack(
         (
-            (info["paddle_x"] + 9 * FIXED_POINT_ONE) / (96 * FIXED_POINT_ONE),
-            info["ball_x"] / (96 * FIXED_POINT_ONE),
-            info["ball_y"] / (96 * FIXED_POINT_ONE),
+            (info["paddle_x"] + 8 * FIXED_POINT_ONE) / (160 * FIXED_POINT_ONE),
+            info["ball_x"] / (160 * FIXED_POINT_ONE),
+            info["ball_y"] / (210 * FIXED_POINT_ONE),
             info["ball_vx"] / (2 * FIXED_POINT_ONE),
             info["ball_vy"] / (2 * FIXED_POINT_ONE),
+            info["awaiting_fire"],
         ),
         axis=1,
     ).astype(np.float32)
@@ -98,8 +99,14 @@ def features(info: dict[str, np.ndarray]) -> np.ndarray:
 
 def tracking_actions(info: dict[str, np.ndarray]) -> np.ndarray:
     """Dense shaping target: center the paddle beneath the ball."""
-    delta = info["ball_x"] - (info["paddle_x"] + 9 * FIXED_POINT_ONE)
-    return np.where(delta < -FIXED_POINT_ONE, 1, np.where(delta > FIXED_POINT_ONE, 2, 0)).astype(np.int64)
+    delta = info["ball_x"] - (info["paddle_x"] + 8 * FIXED_POINT_ONE)
+    actions = np.where(
+        delta < -FIXED_POINT_ONE,
+        3,
+        np.where(delta > FIXED_POINT_ONE, 2, 0),
+    ).astype(np.int64)
+    actions[info["awaiting_fire"].astype(bool)] = 1
+    return actions
 
 
 def _reset(env: BreakoutVecEnv, layout: str, mask: np.ndarray | None = None) -> dict[str, np.ndarray]:
@@ -120,7 +127,7 @@ def _actor_critic(torch: Any):
                 torch.nn.Linear(_HIDDEN, _HIDDEN),
                 torch.nn.Tanh(),
             )
-            self.actor = torch.nn.Linear(_HIDDEN, 3)
+            self.actor = torch.nn.Linear(_HIDDEN, 4)
             self.critic = torch.nn.Linear(_HIDDEN, 1)
 
         def forward(self, values):
@@ -149,6 +156,14 @@ def evaluate(model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps:
                 action = torch.argmax(logits, dim=1).numpy().astype(np.uint8)
             _, reward, terminated, _, info = env.step(action)
             total_reward += float(reward[0])
+            if info["bricks_remaining"][0] == 0:
+                return EvalResult(
+                    score=int(info["score"][0]),
+                    reward=total_reward,
+                    lives=int(info["lives"][0]),
+                    steps=step,
+                    solved=True,
+                )
             if terminated[0]:
                 return EvalResult(
                     score=int(info["score"][0]),
@@ -176,7 +191,14 @@ def save_policy(path: Path, model: Any, *, layout: str, frame_skip: int, seed: i
         "layout": layout,
         "frame_skip": frame_skip,
         "seed": seed,
-        "feature_names": ["paddle_center", "ball_x", "ball_y", "ball_vx", "ball_vy"],
+        "feature_names": [
+            "paddle_center",
+            "ball_x",
+            "ball_y",
+            "ball_vx",
+            "ball_vy",
+            "awaiting_fire",
+        ],
         "hidden_size": _HIDDEN,
         "score": result.score,
         "reward": result.reward,

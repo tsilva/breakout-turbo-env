@@ -37,7 +37,7 @@ def test_load_policy_reads_action_tape(tmp_path):
         ({"layout": "unknown"}, "layout"),
         ({"frame_skip": 0}, "frame_skip"),
         ({"actions": []}, "actions"),
-        ({"actions": [0, 3]}, "every policy action"),
+        ({"actions": [0, 4]}, "every policy action"),
     ],
 )
 def test_load_policy_rejects_invalid_artifacts(tmp_path, updates, message):

@@ -87,8 +87,8 @@ def test_branches_cover_all_actions_without_mutating_source():
     states = env.get_state()[:2]
     before = env.get_state()
     result = env.branch(states)
-    assert result["observations"].shape == (6, 4, 84, 84)
-    np.testing.assert_array_equal(result["actions"], [0, 1, 2, 0, 1, 2])
+    assert result["observations"].shape == (8, 4, 84, 84)
+    np.testing.assert_array_equal(result["actions"], [0, 1, 2, 3, 0, 1, 2, 3])
     assert env.get_state() == before
 
 
@@ -112,14 +112,23 @@ def test_crop_modes_preserve_chw_shape_and_change_pixels():
     assert not np.array_equal(removed_obs, masked_obs)
 
 
-def test_all_layouts_use_the_same_predictable_launch_in_taller_arena():
+def test_all_layouts_start_hidden_and_fire_uses_the_atari_serve():
     env = make_env(frame_skip=1)
     starts = np.arange(4, dtype=np.int32)
     _, info = env.reset(options={"start_indices": starts})
-    assert RAW_HEIGHT == 96
-    assert np.all(info["ball_y"] == 82 * FIXED_POINT_ONE)
+    assert RAW_HEIGHT == 210
+    assert np.all(info["ball_y"] == 122 * FIXED_POINT_ONE)
+    assert np.all(info["lives"] == 5)
+    assert np.all(info["awaiting_fire"] == 1)
     assert len(set(info["ball_vx"].tolist())) == 1
     assert len(set(info["ball_vy"].tolist())) == 1
+
+    _, _, _, _, info = env.step(np.ones(4, dtype=np.uint8))
+    assert np.all(info["ball_x"] == 80 * FIXED_POINT_ONE)
+    assert np.all(info["ball_y"] == 122 * FIXED_POINT_ONE)
+    assert np.all(info["ball_vx"] == FIXED_POINT_ONE)
+    assert np.all(info["ball_vy"] == FIXED_POINT_ONE)
+    assert np.all(info["awaiting_fire"] == 0)
 
 
 def test_render_matches_atari_2600_geometry_and_palette():
@@ -145,11 +154,20 @@ def test_render_matches_atari_2600_geometry_and_palette():
     np.testing.assert_array_equal(frame[17:32], np.broadcast_to(gray, frame[17:32].shape))
     np.testing.assert_array_equal(frame[32:57, :8], np.broadcast_to(gray, frame[32:57, :8].shape))
     np.testing.assert_array_equal(frame[32:57, 8:152], np.broadcast_to(black, frame[32:57, 8:152].shape))
+    # Stable Retro's first rendered frame has already cleared the first brick
+    # as part of the ROM's startup animation. Every other brick is intact.
+    np.testing.assert_array_equal(frame[57:63, 8:16], np.broadcast_to(black, (6, 8, 3)))
     for row, color in enumerate(row_colors):
         band = frame[57 + row * 6 : 63 + row * 6, 8:152]
-        np.testing.assert_array_equal(band, np.broadcast_to(color, band.shape))
-    np.testing.assert_array_equal(frame[5:15, 100:104], np.broadcast_to(gray, (10, 4, 3)))
-    np.testing.assert_array_equal(frame[5:15, 104:112], np.broadcast_to(black, (10, 8, 3)))
+        start = 8 if row == 0 else 0
+        np.testing.assert_array_equal(band[:, start:], np.broadcast_to(color, band[:, start:].shape))
+    five = np.zeros((10, 12, 3), dtype=np.uint8)
+    five[0:2, :] = gray
+    five[2:4, 0:4] = gray
+    five[4:6, :] = gray
+    five[6:8, 8:12] = gray
+    five[8:10, :] = gray
+    np.testing.assert_array_equal(frame[5:15, 100:112], five)
     teal = np.array([64, 152, 128], dtype=np.uint8)
     red = np.array([200, 72, 72], dtype=np.uint8)
     np.testing.assert_array_equal(frame[189:196, :8], np.broadcast_to(teal, (7, 8, 3)))
@@ -163,22 +181,22 @@ def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
     black = np.array([0, 0, 0], dtype=np.uint8)
 
     common = {
-        "ball_y": 50 * FIXED_POINT_ONE,
+        "ball_y": 120 * FIXED_POINT_ONE,
         "ball_vx": FIXED_POINT_ONE,
         "ball_vy": FIXED_POINT_ONE,
         "bricks": 1,
-        "lives": 3,
+        "lives": 5,
     }
     cases = (
-        (0, 1, 8, 8),
-        (39, 48, 76, 80),
-        (78, 95, 144, 150),
+        (8, 8),
+        (76, 80),
+        (144, 150),
     )
-    for paddle_source_x, ball_source_x, paddle_x, ball_x in cases:
+    for paddle_x, ball_x in cases:
         env.configure_lane(
             0,
-            paddle_x=paddle_source_x * FIXED_POINT_ONE,
-            ball_x=ball_source_x * FIXED_POINT_ONE,
+            paddle_x=paddle_x * FIXED_POINT_ONE,
+            ball_x=ball_x * FIXED_POINT_ONE,
             **common,
         )
         frame = env.render()
@@ -190,32 +208,42 @@ def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
             np.broadcast_to(red, (4, 16, 3)),
         )
 
-        # At this source height the isolated ball lands at y=117 and must be
-        # exactly 2x4 (eight pixels), including both horizontal limits.
+        # The native Atari ball is exactly 2x4 (eight pixels), including both
+        # horizontal motion limits.
         np.testing.assert_array_equal(
-            frame[117:121, ball_x : ball_x + 2],
+            frame[120:124, ball_x : ball_x + 2],
             np.broadcast_to(red, (4, 2, 3)),
         )
         if ball_x > 8:
             np.testing.assert_array_equal(
-                frame[117:121, ball_x - 1],
+                frame[120:124, ball_x - 1],
                 np.broadcast_to(black, (4, 3)),
             )
         if ball_x + 2 < 152:
             np.testing.assert_array_equal(
-                frame[117:121, ball_x + 2],
+                frame[120:124, ball_x + 2],
                 np.broadcast_to(black, (4, 3)),
             )
 
 
 def test_render_reflects_missing_bricks_and_lane_status():
     env = make_env(frame_skip=1)
-    env.reset(options={"start_indices": np.array([1, 0, 0, 0], dtype=np.int32)})
+    env.reset()
+    env.configure_lane(
+        0,
+        paddle_x=40 * FIXED_POINT_ONE,
+        ball_x=80 * FIXED_POINT_ONE,
+        ball_y=120 * FIXED_POINT_ONE,
+        ball_vx=FIXED_POINT_ONE,
+        ball_vy=FIXED_POINT_ONE,
+        bricks=((1 << 108) - 1) ^ (1 << 2),
+        lives=5,
+    )
     frame = env.render()
     black = np.array([0, 0, 0], dtype=np.uint8)
     red = np.array([200, 72, 72], dtype=np.uint8)
-    np.testing.assert_array_equal(frame[57:63, 8:26], np.broadcast_to(red, frame[57:63, 8:26].shape))
-    np.testing.assert_array_equal(frame[57:63, 26:44], np.broadcast_to(black, frame[57:63, 26:44].shape))
+    np.testing.assert_array_equal(frame[57:63, 8:24], np.broadcast_to(red, frame[57:63, 8:24].shape))
+    np.testing.assert_array_equal(frame[57:63, 24:32], np.broadcast_to(black, frame[57:63, 24:32].shape))
     assert np.any(frame[5:15, 36:80])
     assert np.any(frame[189:193, 8:152] == red)
 
@@ -227,7 +255,7 @@ def test_terminal_lane_requires_explicit_reset_then_can_continue():
         0,
         paddle_x=40 * FIXED_POINT_ONE,
         ball_x=10 * FIXED_POINT_ONE,
-        ball_y=(RAW_HEIGHT + 2) * FIXED_POINT_ONE,
+        ball_y=217 * FIXED_POINT_ONE,
         ball_vx=FIXED_POINT_ONE,
         ball_vy=FIXED_POINT_ONE,
         bricks=1 | (1 << 47),
@@ -264,7 +292,7 @@ def test_thread_count_does_not_change_trace():
     parallel.reset()
     rng = np.random.default_rng(1234)
     for _ in range(20):
-        actions = rng.integers(0, 3, size=16, dtype=np.uint8)
+        actions = rng.integers(0, 4, size=16, dtype=np.uint8)
         serial.step(actions)
         parallel.step(actions)
     assert serial.get_state() == parallel.get_state()
@@ -275,7 +303,7 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
     observation, _ = env.reset(options={"start_indices": np.arange(4, dtype=np.int32)})
     digest = hashlib.sha256(observation.tobytes())
     for step in range(100):
-        actions = np.array([(step + lane) % 3 for lane in range(4)], dtype=np.uint8)
+        actions = np.array([(step + lane) % 4 for lane in range(4)], dtype=np.uint8)
         observation, reward, terminated, truncated, _ = env.step(actions)
         digest.update(observation.tobytes())
         digest.update(reward.tobytes())
@@ -289,38 +317,57 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
                 }
             )
             digest.update(observation.tobytes())
-    assert digest.hexdigest() == "6f4c1474aad16c0320094e38aa862c80188e0cbbbb137710a0ed48cd94673148"
+    assert digest.hexdigest() == "36720063423e4cc9ae644861da5d08454512f6a9d222a06fdb013e308b4722cb"
 
 
-@pytest.mark.parametrize(
-    ("ball_x", "ball_y", "ball_vx", "ball_vy", "velocity_key", "expected_sign"),
-    [
-        (9, 6, 0, 1, "ball_vy", -1),
-        (9, 12, 0, -1, "ball_vy", 1),
-        (3, 9, 1, 0, "ball_vx", -1),
-        (15, 9, -1, 0, "ball_vx", 1),
-    ],
-)
-def test_ball_bounces_on_every_brick_face(
-    ball_x, ball_y, ball_vx, ball_vy, velocity_key, expected_sign
-):
+def test_delayed_collision_latches_reproduce_the_top_left_corner_trace():
     env = make_env(frame_skip=1)
     env.reset()
     env.configure_lane(
         0,
         paddle_x=40 * FIXED_POINT_ONE,
-        ball_x=ball_x * FIXED_POINT_ONE,
-        ball_y=ball_y * FIXED_POINT_ONE,
-        ball_vx=ball_vx * FIXED_POINT_ONE,
-        ball_vy=ball_vy * FIXED_POINT_ONE,
-        bricks=1 | (1 << 47),
-        lives=3,
+        ball_x=10 * FIXED_POINT_ONE,
+        ball_y=34 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2,
+        ball_vx=-FIXED_POINT_ONE,
+        ball_vy=-(3 * FIXED_POINT_ONE // 2),
+        bricks=(1 << 108) - 1,
+        lives=5,
     )
-    _, reward, _, _, info = env.step(np.zeros(4, dtype=np.uint8))
-    assert reward[0] == 7.0
-    assert info["brick_mask"][0] == 1 << 47
-    assert int(info[velocity_key][0]) * expected_sign > 0
-    assert info["collision_events"][0] & 4
+
+    trace = []
+    for _ in range(6):
+        _, _, _, _, info = env.step(np.zeros(4, dtype=np.uint8))
+        trace.append(
+            (
+                int(info["ball_x"][0]),
+                int(info["ball_y"][0]),
+                int(info["ball_vx"][0]),
+                int(info["ball_vy"][0]),
+                int(info["collision_events"][0]),
+            )
+        )
+    assert trace == [
+        (9 * FIXED_POINT_ONE, 33 * FIXED_POINT_ONE, -FIXED_POINT_ONE, -(3 * FIXED_POINT_ONE // 2), 0),
+        (8 * FIXED_POINT_ONE, 34 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
+        (7 * FIXED_POINT_ONE, 36 * FIXED_POINT_ONE, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+        (8 * FIXED_POINT_ONE, 37 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
+        (9 * FIXED_POINT_ONE, 39 * FIXED_POINT_ONE, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+        (10 * FIXED_POINT_ONE, 40 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+    ]
+
+
+def test_atari_digital_paddle_inertia_trace():
+    env = make_env(frame_skip=1)
+    env.reset()
+    env.step(np.array([1, 0, 0, 0], dtype=np.uint8))
+    for _ in range(12):
+        env.step(np.zeros(4, dtype=np.uint8))
+
+    positions = []
+    for _ in range(20):
+        _, _, _, _, info = env.step(np.array([2, 0, 0, 0], dtype=np.uint8))
+        positions.append(int(info["paddle_x"][0] // FIXED_POINT_ONE))
+    assert positions == [26, 26, 26, 26, 26, 27, 27, 28, 30, 32, 34, 36, 38, 40, 42, 45, 47, 49, 51, 53]
 
 
 @pytest.mark.parametrize(
@@ -329,19 +376,20 @@ def test_ball_bounces_on_every_brick_face(
 def test_reward_matches_stable_retro_score_delta_by_brick_row(row, expected_reward):
     env = make_env(frame_skip=1)
     env.reset()
-    target = 1 << (row * 8)
-    survivor = 1 << (47 if row < 5 else 0)
+    target = 1 << (row * 18 + 9)
+    survivor = 1 << (107 if row < 5 else 0)
     env.configure_lane(
         0,
         paddle_x=40 * FIXED_POINT_ONE,
-        ball_x=9 * FIXED_POINT_ONE,
-        ball_y=(6 + row * 5) * FIXED_POINT_ONE,
+        ball_x=80 * FIXED_POINT_ONE,
+        ball_y=(63 + row * 6) * FIXED_POINT_ONE,
         ball_vx=0,
-        ball_vy=FIXED_POINT_ONE,
+        ball_vy=-FIXED_POINT_ONE,
         bricks=target | survivor,
-        lives=3,
+        lives=5,
     )
 
+    env.step(np.zeros(4, dtype=np.uint8))
     _, reward, terminated, _, info = env.step(np.zeros(4, dtype=np.uint8))
 
     assert reward[0] == expected_reward
@@ -357,7 +405,7 @@ def test_life_loss_has_no_reward_shaping(lives, expected_terminated):
         0,
         paddle_x=40 * FIXED_POINT_ONE,
         ball_x=10 * FIXED_POINT_ONE,
-        ball_y=(RAW_HEIGHT + 2) * FIXED_POINT_ONE,
+        ball_y=217 * FIXED_POINT_ONE,
         ball_vx=FIXED_POINT_ONE,
         ball_vy=FIXED_POINT_ONE,
         bricks=1 | (1 << 47),
@@ -377,16 +425,18 @@ def test_board_clear_returns_only_the_score_delta_without_bonus():
     env.configure_lane(
         0,
         paddle_x=40 * FIXED_POINT_ONE,
-        ball_x=9 * FIXED_POINT_ONE,
-        ball_y=6 * FIXED_POINT_ONE,
+        ball_x=80 * FIXED_POINT_ONE,
+        ball_y=63 * FIXED_POINT_ONE,
         ball_vx=0,
-        ball_vy=FIXED_POINT_ONE,
-        bricks=1,
-        lives=3,
+        ball_vy=-FIXED_POINT_ONE,
+        bricks=1 << 9,
+        lives=5,
     )
 
+    env.step(np.zeros(4, dtype=np.uint8))
     _, reward, terminated, _, info = env.step(np.zeros(4, dtype=np.uint8))
 
     assert reward[0] == 7.0
     assert info["score"][0] == 7
-    assert terminated[0]
+    assert not terminated[0]
+    assert info["bricks_remaining"][0] == 0

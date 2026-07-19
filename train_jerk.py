@@ -97,7 +97,7 @@ def train_generation(
     finished = np.zeros(population, dtype=np.bool_)
     end_steps = np.full(population, max_steps, dtype=np.int64)
     final_scores = np.zeros(population, dtype=np.int64)
-    final_lives = np.full(population, 3, dtype=np.int64)
+    final_lives = np.full(population, 5, dtype=np.int64)
     solved = np.zeros(population, dtype=np.bool_)
 
     # Different fixed offsets create different paddle bounce angles. Candidate
@@ -106,42 +106,46 @@ def train_generation(
     offsets[0] = 0
 
     for step in range(max_steps):
-        paddle_center = infos["paddle_x"] + 9 * FIXED_POINT_ONE
+        paddle_center = infos["paddle_x"] + 8 * FIXED_POINT_ONE
         target = infos["ball_x"] + offsets
         actions = np.where(
             target < paddle_center - FIXED_POINT_ONE,
-            1,
+            3,
             np.where(target > paddle_center + FIXED_POINT_ONE, 2, 0),
         ).astype(np.uint8)
+        actions[infos["awaiting_fire"].astype(bool)] = 1
 
         replaying = step < prefixes
         if champion and replaying.any():
             actions[replaying] = champion[step]
 
         exploring = active & ~replaying & (rng.random(population) < exploration)
-        actions[exploring] = rng.integers(0, 3, size=int(exploring.sum()), dtype=np.uint8)
+        actions[exploring] = rng.integers(0, 4, size=int(exploring.sum()), dtype=np.uint8)
         # Candidate zero is a stable reference and exact champion replay.
         if step >= prefixes[0]:
             if target[0] < paddle_center[0] - FIXED_POINT_ONE:
-                actions[0] = 1
+                actions[0] = 3
             elif target[0] > paddle_center[0] + FIXED_POINT_ONE:
                 actions[0] = 2
             else:
                 actions[0] = 0
+            if infos["awaiting_fire"][0]:
+                actions[0] = 1
 
         actions[~active] = 0
         histories[:, step] = actions
         _, step_rewards, terminated, _, infos = env.step(actions)
         rewards[active] += step_rewards[active]
 
-        newly_finished = active & terminated
-        if newly_finished.any():
-            final_scores[newly_finished] = infos["score"][newly_finished]
-            final_lives[newly_finished] = infos["lives"][newly_finished]
-            solved[newly_finished] = infos["bricks_remaining"][newly_finished] == 0
-            end_steps[newly_finished] = step + 1
-            active[newly_finished] = False
-            finished[newly_finished] = True
+        newly_solved = active & (infos["bricks_remaining"] == 0)
+        completed = active & (terminated | newly_solved)
+        if completed.any():
+            final_scores[completed] = infos["score"][completed]
+            final_lives[completed] = infos["lives"][completed]
+            solved[newly_solved] = True
+            end_steps[completed] = step + 1
+            active[completed] = False
+            finished[completed] = True
 
         if not active.any():
             break

@@ -41,7 +41,8 @@ def _print_human_header(
         "grayscale=True crop=(0,0) obs_crop_mode=remove "
         f"resize={OBSERVATION_SIZE}x{OBSERVATION_SIZE} "
         "obs_resize_algorithm=area action_set=breakout "
-        "actions=['noop','left','right'] action_seed=none obs_layout=chw maxpool_last_two=False "
+        "actions=['noop','fire','right','left'] action_seed=none obs_layout=chw "
+        "maxpool_last_two=False "
         "obs_copy=safe_view info_filter=none autoreset=disabled",
         flush=True,
     )
@@ -83,7 +84,7 @@ def run_benchmark(*, steps: int, warmup: int, repeats: int, threads: int) -> lis
         maxpool_last_two=False,
         info_filter="none",
     )
-    actions = (np.arange(NUM_ENVS, dtype=np.uint8) % 3).astype(np.uint8)
+    actions = (np.arange(NUM_ENVS, dtype=np.uint8) % 4).astype(np.uint8)
     rates: list[float] = []
     try:
         obs, _ = env.reset()

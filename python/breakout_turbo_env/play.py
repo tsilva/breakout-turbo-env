@@ -88,7 +88,7 @@ def _print_episode_stats(
         "episode_end"
         f" episode={episode} layout={layout} outcome={outcome}"
         f" score={score} return={episode_return:.1f} lives={lives}"
-        f" bricks_cleared={48 - bricks_remaining} native_ticks={native_ticks}"
+        f" bricks_cleared={108 - bricks_remaining} native_ticks={native_ticks}"
         f" display_steps={display_steps} elapsed_seconds={elapsed:.2f}",
         flush=True,
     )
@@ -164,7 +164,7 @@ def run(
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    elif event.key in (pygame.K_SPACE, pygame.K_r):
+                    elif event.key == pygame.K_r:
                         reset_requested = True
                     elif event.key == pygame.K_p:
                         paused = not paused
@@ -179,9 +179,10 @@ def run(
 
             if running and not paused:
                 keys = pygame.key.get_pressed()
+                fire = keys[pygame.K_SPACE]
                 left = keys[pygame.K_LEFT] or keys[pygame.K_a]
                 right = keys[pygame.K_RIGHT] or keys[pygame.K_d]
-                action = 1 if left and not right else 2 if right and not left else 0
+                action = 1 if fire else 3 if left and not right else 2 if right and not left else 0
                 observation, reward, terminated, _, info = env.step(
                     np.array([action], dtype=np.uint8)
                 )
