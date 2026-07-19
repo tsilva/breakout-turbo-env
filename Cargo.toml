@@ -2,8 +2,12 @@
 name = "breakout-turbo-env"
 version = "0.2.5"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "Deterministic high-throughput Breakout vector environment"
+homepage = "https://github.com/tsilva/breakout-turbo-env"
+repository = "https://github.com/tsilva/breakout-turbo-env"
+readme = "README.md"
 
 [lib]
 name = "_breakout_turbo"

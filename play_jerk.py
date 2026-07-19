@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 from breakout_turbo_env import BreakoutVecEnv
 from breakout_turbo_env.play import (
     _DEFAULT_PLAY_SCALE,

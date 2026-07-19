@@ -123,8 +123,35 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
 
 #[derive(Clone, Copy)]
 struct FastAreaPixel {
-    indices: [u16; 4],
+    indices: [u16; 9],
     count: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct VisualState {
+    paddle_x: usize,
+    paddle_width: usize,
+    ball_x: usize,
+    ball_y: usize,
+    visible_bricks: u128,
+    hud_score: usize,
+    hud_lives: usize,
+    awaiting_fire: bool,
+}
+
+impl VisualState {
+    fn from_lane(lane: &Lane) -> Self {
+        Self {
+            paddle_x: (lane.paddle_x / FP).clamp(8, 144) as usize,
+            paddle_width: if lane.narrow_paddle { 12 } else { 16 },
+            ball_x: (lane.ball_x / FP).max(0) as usize,
+            ball_y: (lane.ball_y / FP).max(0) as usize,
+            visible_bricks: visible_bricks(lane),
+            hud_score: lane.hud_score.clamp(0, 999) as usize,
+            hud_lives: lane.hud_lives.clamp(0, 9) as usize,
+            awaiting_fire: lane.awaiting_fire,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -137,7 +164,6 @@ struct Preprocess {
     rows: Vec<(usize, usize)>,
     columns: Vec<(usize, usize)>,
     fast_area: Option<Vec<FastAreaPixel>>,
-    fast_two_by_two: bool,
 }
 
 #[derive(Clone)]
@@ -169,7 +195,8 @@ struct Lane {
     paddle_measure: u8,
     stack: Vec<u8>,
     stack_head: usize,
-    raw_scratch: Vec<u8>,
+    cached_visual: VisualState,
+    visual_cache_valid: bool,
 }
 
 impl Lane {
@@ -202,7 +229,8 @@ impl Lane {
             paddle_measure: 162,
             stack: vec![0; stack_size],
             stack_head: 0,
-            raw_scratch: vec![0; RAW_W * RAW_H],
+            cached_visual: VisualState::default(),
+            visual_cache_valid: false,
         }
     }
 }
@@ -269,6 +297,7 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.paddle_measure = 162;
     lane.stack.fill(0);
     lane.stack_head = 0;
+    lane.visual_cache_valid = false;
     let plane = preprocess.out_h * preprocess.out_w;
     render_and_push(lane, preprocess, frame_stack);
     for slot in 1..frame_stack {
@@ -575,123 +604,96 @@ const DIGITS: [[u8; 5]; 10] = [
     [0b111, 0b101, 0b111, 0b001, 0b001],
 ];
 
-fn draw_digit(frame: &mut [u8], digit: usize, x0: usize) {
-    for (row, bits) in DIGITS[digit % 10].iter().enumerate() {
-        for col in 0..3 {
-            if bits & (1 << (2 - col)) == 0 {
-                continue;
-            }
-            for y in 5 + row * 2..5 + row * 2 + 2 {
-                frame[y * RENDER_W + x0 + col * 4..y * RENDER_W + x0 + col * 4 + 4].fill(1);
-            }
-        }
+fn digit_pixel(digit: usize, x0: usize, x: usize, y: usize) -> bool {
+    if !(5..15).contains(&y) || x < x0 || x >= x0 + 12 {
+        return false;
     }
+    let row = (y - 5) / 2;
+    let column = (x - x0) / 4;
+    DIGITS[digit % 10][row] & (1 << (2 - column)) != 0
 }
 
-fn render_indexed(lane: &Lane) -> Vec<u8> {
-    let mut frame = vec![0u8; RENDER_W * RENDER_H];
-
-    // Atari's status display lives inside the video signal: three score
-    // digits, the selected game number, and the current player number.
-    let score = lane.hud_score.clamp(0, 999) as usize;
-    draw_digit(&mut frame, score / 100, 36);
-    draw_digit(&mut frame, (score / 10) % 10, 52);
-    draw_digit(&mut frame, score % 10, 68);
-    draw_digit(&mut frame, lane.hud_lives.clamp(0, 9) as usize, 100);
-    draw_digit(&mut frame, 1, 132);
-
-    // Stella's native frame uses a 15-line header bar and 8-pixel
-    // playfield walls in the same neutral gray.
-    for y in 17..32 {
-        frame[y * RENDER_W..(y + 1) * RENDER_W].fill(1);
+fn ball_pixel(visual: VisualState, x: usize, y: usize) -> Option<u8> {
+    if visual.awaiting_fire || visual.ball_x >= 152 || visual.ball_y >= RENDER_H {
+        return None;
     }
-    for y in 32..189 {
-        frame[y * RENDER_W..y * RENDER_W + 8].fill(1);
-        frame[y * RENDER_W + 152..(y + 1) * RENDER_W].fill(1);
+    let x0 = visual.ball_x.max(8);
+    let x1 = visual.ball_x.saturating_add(2).min(152);
+    if x < x0 || x >= x1 {
+        return None;
     }
 
-    // The TIA playfield resolves the wall into 18 independently destructible
-    // 8x6 cells per row.
-    for row in 0..BRICK_ROWS {
-        for col in 0..BRICK_COLS {
-            let index = row * BRICK_COLS + col;
-            if (visible_bricks(lane) >> index) & 1 == 0 {
-                continue;
-            }
-            let x0 = 8 + col * 8;
-            let y0 = 57 + row * 6;
-            for y in y0..y0 + 6 {
-                frame[y * RENDER_W + x0..y * RENDER_W + x0 + 8].fill(2 + row as u8);
-            }
+    let above_bricks = visual.ball_y < 57;
+    let ordinary_y0 = if above_bricks {
+        visual.ball_y.saturating_sub(1)
+    } else {
+        visual.ball_y
+    };
+    if (ordinary_y0..ordinary_y0.saturating_add(4).min(196)).contains(&y)
+        && !(57..93).contains(&y)
+        && (y != 195 || x < x1.min(47))
+    {
+        return Some(if above_bricks && y < 57 { 1 } else { 2 });
+    }
+
+    let band_y0 = visual.ball_y.saturating_sub(1);
+    if (band_y0..band_y0.saturating_add(4).min(93)).contains(&y) && y >= 56 {
+        return Some(if y == 56 { 1 } else { 2 + ((y - 57) / 6) as u8 });
+    }
+    None
+}
+
+fn indexed_pixel(visual: VisualState, x: usize, y: usize) -> u8 {
+    let mut pixel = 0u8;
+
+    if digit_pixel(visual.hud_score / 100, 36, x, y)
+        || digit_pixel((visual.hud_score / 10) % 10, 52, x, y)
+        || digit_pixel(visual.hud_score % 10, 68, x, y)
+        || digit_pixel(visual.hud_lives, 100, x, y)
+        || digit_pixel(1, 132, x, y)
+        || (17..32).contains(&y)
+        || ((32..189).contains(&y) && !(8..152).contains(&x))
+    {
+        pixel = 1;
+    }
+
+    if (57..93).contains(&y) && (8..152).contains(&x) {
+        let row = (y - 57) / 6;
+        let column = (x - 8) / 8;
+        if visual.visible_bricks & (1u128 << (row * BRICK_COLS + column)) != 0 {
+            pixel = 2 + row as u8;
         }
     }
 
-    let paddle_x = (lane.paddle_x / FP).clamp(8, 144) as usize;
-    let paddle_width = if lane.narrow_paddle { 12 } else { 16 };
-    for y in 189..193 {
-        frame[y * RENDER_W + paddle_x..y * RENDER_W + paddle_x + paddle_width].fill(2);
+    if (189..193).contains(&y)
+        && (visual.paddle_x..visual.paddle_x + visual.paddle_width).contains(&x)
+    {
+        pixel = 2;
     }
 
-    if !lane.awaiting_fire {
-        let ball_x = (lane.ball_x / FP).max(0) as usize;
-        let ball_y = (lane.ball_y / FP).max(0) as usize;
-        if ball_x < 152 && ball_y < RENDER_H {
-            let visible_x0 = ball_x.max(8);
-            let visible_x1 = (ball_x + 2).min(152);
-            if visible_x0 < visible_x1 {
-                // Above the bricks the ROM reuses the neutral playfield color
-                // for the ball and starts it one scanline early. Below the top
-                // row the ordinary brick-band kernel remains.
-                let playfield_colored_above_bricks = ball_y < 57;
-                let ordinary_y0 = if playfield_colored_above_bricks {
-                    ball_y.saturating_sub(1)
-                } else {
-                    ball_y
-                };
-                for y in ordinary_y0..(ordinary_y0 + 4).min(196) {
-                    if (57..93).contains(&y) {
-                        continue;
-                    }
-                    let scanline_x1 = if y == 195 {
-                        visible_x1.min(47)
-                    } else {
-                        visible_x1
-                    };
-                    for x in visible_x0..scanline_x1 {
-                        let pixel = &mut frame[y * RENDER_W + x];
-                        if *pixel == 0 {
-                            *pixel = if playfield_colored_above_bricks && y < 57 {
-                                1
-                            } else {
-                                2
-                            };
-                        }
-                    }
-                }
-                let band_y0 = ball_y.saturating_sub(1);
-                for y in band_y0..(band_y0 + 4).min(93) {
-                    if y < 56 {
-                        continue;
-                    }
-                    let ball_color = if y == 56 { 1 } else { 2 + ((y - 57) / 6) as u8 };
-                    for x in visible_x0..visible_x1 {
-                        let pixel = &mut frame[y * RENDER_W + x];
-                        if *pixel == 0 {
-                            *pixel = ball_color;
-                        }
-                    }
-                }
-            }
+    if pixel == 0 {
+        if let Some(ball) = ball_pixel(visual, x, y) {
+            pixel = ball;
         }
     }
 
     // The original four-paddle kernel leaves the inactive players clipped at
-    // the lower wall edges in Stella's output.
-    for y in 189..196 {
-        frame[y * RENDER_W..y * RENDER_W + 8].fill(8);
+    // the lower wall edges in Stella's output. These writes have scanline
+    // priority over the active ball and paddle.
+    if (189..196).contains(&y) && x < 8 {
+        pixel = 8;
     }
-    for y in 189..195 {
-        frame[y * RENDER_W + 152..(y + 1) * RENDER_W].fill(2);
+    if (189..195).contains(&y) && x >= 152 {
+        pixel = 2;
+    }
+    pixel
+}
+
+fn render_indexed(lane: &Lane) -> Vec<u8> {
+    let visual = VisualState::from_lane(lane);
+    let mut frame = vec![0u8; RENDER_W * RENDER_H];
+    for (index, pixel) in frame.iter_mut().enumerate() {
+        *pixel = indexed_pixel(visual, index % RENDER_W, index / RENDER_W);
     }
     frame
 }
@@ -711,87 +713,202 @@ fn palette_gray(index: u8) -> u8 {
     }
 }
 
-fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
-    let indexed = render_indexed(lane);
-    for (destination, source) in lane.raw_scratch.iter_mut().zip(indexed) {
-        *destination = palette_gray(source);
-    }
-    let raw = &mut lane.raw_scratch;
+fn policy_gray_pixel(visual: VisualState, preprocess: &Preprocess, x: usize, y: usize) -> u8 {
     let [top, bottom, left, right] = preprocess.crop;
-    let (source_y, source_x) = if preprocess.mask_crop {
-        for y in 0..RAW_H {
-            for x in 0..RAW_W {
-                if y < top || y >= RAW_H - bottom || x < left || x >= RAW_W - right {
-                    raw[y * RAW_W + x] = preprocess.crop_fill;
-                }
+    if preprocess.mask_crop && (y < top || y >= RAW_H - bottom || x < left || x >= RAW_W - right) {
+        preprocess.crop_fill
+    } else {
+        palette_gray(indexed_pixel(visual, x, y))
+    }
+}
+
+fn resized_pixel(visual: VisualState, preprocess: &Preprocess, output: usize) -> u8 {
+    if let Some(plan) = &preprocess.fast_area {
+        let pixel = &plan[output];
+        let sum = pixel.indices[..pixel.count as usize]
+            .iter()
+            .map(|&index| {
+                let index = index as usize;
+                policy_gray_pixel(visual, preprocess, index % RAW_W, index / RAW_W) as usize
+            })
+            .sum::<usize>();
+        return (sum / pixel.count as usize) as u8;
+    }
+
+    let output_y = output / preprocess.out_w;
+    let output_x = output % preprocess.out_w;
+    let (sy0, sy1) = preprocess.rows[output_y];
+    let (sx0, sx1) = preprocess.columns[output_x];
+    let source_y = if preprocess.mask_crop {
+        0
+    } else {
+        preprocess.crop[0]
+    };
+    let source_x = if preprocess.mask_crop {
+        0
+    } else {
+        preprocess.crop[2]
+    };
+    let mut sum = 0usize;
+    let mut count = 0usize;
+    for y in sy0..sy1 {
+        for x in sx0..sx1 {
+            sum += policy_gray_pixel(visual, preprocess, source_x + x, source_y + y) as usize;
+            count += 1;
+        }
+    }
+    (sum / count) as u8
+}
+
+fn resize_full(visual: VisualState, preprocess: &Preprocess, out: &mut [u8]) {
+    for (index, destination) in out.iter_mut().enumerate() {
+        *destination = resized_pixel(visual, preprocess, index);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DirtyRect {
+    x0: usize,
+    x1: usize,
+    y0: usize,
+    y1: usize,
+}
+
+fn paddle_rect(visual: VisualState) -> DirtyRect {
+    DirtyRect {
+        x0: visual.paddle_x,
+        x1: visual.paddle_x + visual.paddle_width,
+        y0: 189,
+        y1: 193,
+    }
+}
+
+fn ball_rect(visual: VisualState) -> Option<DirtyRect> {
+    if visual.awaiting_fire || visual.ball_x >= 152 || visual.ball_y >= RENDER_H {
+        return None;
+    }
+    let x0 = visual.ball_x.max(8);
+    let x1 = visual.ball_x.saturating_add(2).min(152);
+    (x0 < x1).then_some(DirtyRect {
+        x0,
+        x1,
+        y0: visual.ball_y.saturating_sub(1),
+        y1: visual.ball_y.saturating_add(4).min(196),
+    })
+}
+
+fn refresh_rect(visual: VisualState, preprocess: &Preprocess, out: &mut [u8], rect: DirtyRect) {
+    let source_y = if preprocess.mask_crop {
+        0
+    } else {
+        preprocess.crop[0]
+    };
+    let source_x = if preprocess.mask_crop {
+        0
+    } else {
+        preprocess.crop[2]
+    };
+    for (output_y, &(sy0, sy1)) in preprocess.rows.iter().enumerate() {
+        if source_y + sy0 >= rect.y1 || source_y + sy1 <= rect.y0 {
+            continue;
+        }
+        for (output_x, &(sx0, sx1)) in preprocess.columns.iter().enumerate() {
+            if source_x + sx0 < rect.x1 && source_x + sx1 > rect.x0 {
+                let output = output_y * preprocess.out_w + output_x;
+                out[output] = resized_pixel(visual, preprocess, output);
             }
         }
-        (0, 0)
-    } else {
-        (top, left)
-    };
+    }
+}
+
+fn refresh_visual_delta(
+    previous: VisualState,
+    visual: VisualState,
+    preprocess: &Preprocess,
+    out: &mut [u8],
+) {
+    if previous.paddle_x != visual.paddle_x || previous.paddle_width != visual.paddle_width {
+        refresh_rect(visual, preprocess, out, paddle_rect(previous));
+        refresh_rect(visual, preprocess, out, paddle_rect(visual));
+    }
+    if previous.ball_x != visual.ball_x
+        || previous.ball_y != visual.ball_y
+        || previous.awaiting_fire != visual.awaiting_fire
+    {
+        if let Some(rect) = ball_rect(previous) {
+            refresh_rect(visual, preprocess, out, rect);
+        }
+        if let Some(rect) = ball_rect(visual) {
+            refresh_rect(visual, preprocess, out, rect);
+        }
+    }
+
+    let mut changed_bricks = previous.visible_bricks ^ visual.visible_bricks;
+    while changed_bricks != 0 {
+        let index = changed_bricks.trailing_zeros() as usize;
+        changed_bricks &= changed_bricks - 1;
+        let row = index / BRICK_COLS;
+        let column = index % BRICK_COLS;
+        refresh_rect(
+            visual,
+            preprocess,
+            out,
+            DirtyRect {
+                x0: 8 + column * 8,
+                x1: 16 + column * 8,
+                y0: 57 + row * 6,
+                y1: 63 + row * 6,
+            },
+        );
+    }
+    if previous.hud_score != visual.hud_score {
+        refresh_rect(
+            visual,
+            preprocess,
+            out,
+            DirtyRect {
+                x0: 36,
+                x1: 80,
+                y0: 5,
+                y1: 15,
+            },
+        );
+    }
+    if previous.hud_lives != visual.hud_lives {
+        refresh_rect(
+            visual,
+            preprocess,
+            out,
+            DirtyRect {
+                x0: 100,
+                x1: 112,
+                y0: 5,
+                y1: 15,
+            },
+        );
+    }
+}
+
+fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
+    let visual = VisualState::from_lane(lane);
     let plane = preprocess.out_h * preprocess.out_w;
     let destination_slot = lane.stack_head;
-    let out = &mut lane.stack[destination_slot * plane..(destination_slot + 1) * plane];
-    // Deterministic integer box-area resize. Upsampled axes naturally select a
-    // single source pixel; downsampled axes average every covered source pixel.
-    if preprocess.fast_two_by_two {
-        for (y, &(source_row, _)) in preprocess.rows.iter().enumerate() {
-            let row0 = (source_y + source_row) * RAW_W + source_x;
-            let row1 = row0 + RAW_W;
-            let output_row = y * preprocess.out_w;
-            for (x, &(source_column, _)) in preprocess.columns.iter().enumerate() {
-                // Construction validates that every area box is exactly 2x2
-                // and fully inside the fixed raw frame.
-                let value = unsafe {
-                    (*raw.get_unchecked(row0 + source_column) as u16
-                        + *raw.get_unchecked(row0 + source_column + 1) as u16
-                        + *raw.get_unchecked(row1 + source_column) as u16
-                        + *raw.get_unchecked(row1 + source_column + 1) as u16)
-                        >> 2
-                };
-                out[output_row + x] = value as u8;
-            }
+    if lane.visual_cache_valid {
+        let source_slot = (destination_slot + frame_stack - 1) % frame_stack;
+        if source_slot != destination_slot {
+            lane.stack.copy_within(
+                source_slot * plane..(source_slot + 1) * plane,
+                destination_slot * plane,
+            );
         }
-    } else if let Some(plan) = &preprocess.fast_area {
-        for (dst, pixel) in out.iter_mut().zip(plan) {
-            let indices = pixel.indices;
-            *dst = match pixel.count {
-                1 => raw[indices[0] as usize],
-                2 => {
-                    ((raw[indices[0] as usize] as u16 + raw[indices[1] as usize] as u16) >> 1) as u8
-                }
-                4 => {
-                    ((raw[indices[0] as usize] as u16
-                        + raw[indices[1] as usize] as u16
-                        + raw[indices[2] as usize] as u16
-                        + raw[indices[3] as usize] as u16)
-                        >> 2) as u8
-                }
-                count => {
-                    let sum = indices[..count as usize]
-                        .iter()
-                        .map(|&index| raw[index as usize] as u16)
-                        .sum::<u16>();
-                    (sum / count as u16) as u8
-                }
-            };
-        }
+        let out = &mut lane.stack[destination_slot * plane..(destination_slot + 1) * plane];
+        refresh_visual_delta(lane.cached_visual, visual, preprocess, out);
     } else {
-        for (y, &(sy0, sy1)) in preprocess.rows.iter().enumerate() {
-            for (x, &(sx0, sx1)) in preprocess.columns.iter().enumerate() {
-                let mut sum = 0usize;
-                let mut count = 0usize;
-                for sy in sy0..sy1 {
-                    for sx in sx0..sx1 {
-                        sum += raw[(source_y + sy) * RAW_W + source_x + sx] as usize;
-                        count += 1;
-                    }
-                }
-                out[y * preprocess.out_w + x] = (sum / count) as u8;
-            }
-        }
+        let out = &mut lane.stack[destination_slot * plane..(destination_slot + 1) * plane];
+        resize_full(visual, preprocess, out);
     }
+    lane.cached_visual = visual;
+    lane.visual_cache_valid = true;
     lane.stack_head = (lane.stack_head + 1) % frame_stack;
 }
 
@@ -980,7 +1097,8 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
         paddle_measure,
         stack,
         stack_head,
-        raw_scratch: vec![0; RAW_W * RAW_H],
+        cached_visual: VisualState::default(),
+        visual_cache_valid: false,
     })
 }
 
@@ -998,6 +1116,7 @@ struct NativeBreakoutVecEnv {
 #[pymethods]
 impl NativeBreakoutVecEnv {
     #[new]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         num_envs: usize,
         obs_h: usize,
@@ -1032,7 +1151,8 @@ impl NativeBreakoutVecEnv {
         let rows: Vec<(usize, usize)> = (0..obs_h)
             .map(|y| {
                 let begin = y * source_h / obs_h;
-                let end = (((y + 1) * source_h + obs_h - 1) / obs_h)
+                let end = ((y + 1) * source_h)
+                    .div_ceil(obs_h)
                     .max(begin + 1)
                     .min(source_h);
                 (begin, end)
@@ -1041,7 +1161,8 @@ impl NativeBreakoutVecEnv {
         let columns: Vec<(usize, usize)> = (0..obs_w)
             .map(|x| {
                 let begin = x * source_w / obs_w;
-                let end = (((x + 1) * source_w + obs_w - 1) / obs_w)
+                let end = ((x + 1) * source_w)
+                    .div_ceil(obs_w)
                     .max(begin + 1)
                     .min(source_w);
                 (begin, end)
@@ -1049,13 +1170,13 @@ impl NativeBreakoutVecEnv {
             .collect();
         let source_y = if mask_crop { 0 } else { crop[0] };
         let source_x = if mask_crop { 0 } else { crop[2] };
-        let fast_area = if rows.iter().all(|&(begin, end)| end - begin <= 2)
-            && columns.iter().all(|&(begin, end)| end - begin <= 2)
+        let fast_area = if rows.iter().all(|&(begin, end)| end - begin <= 3)
+            && columns.iter().all(|&(begin, end)| end - begin <= 3)
         {
             let mut plan = Vec::with_capacity(obs_h * obs_w);
             for &(row_begin, row_end) in &rows {
                 for &(column_begin, column_end) in &columns {
-                    let mut indices = [0u16; 4];
+                    let mut indices = [0u16; 9];
                     let mut count = 0usize;
                     for row in row_begin..row_end {
                         for column in column_begin..column_end {
@@ -1073,8 +1194,6 @@ impl NativeBreakoutVecEnv {
         } else {
             None
         };
-        let fast_two_by_two = rows.iter().all(|&(begin, end)| end - begin == 2)
-            && columns.iter().all(|&(begin, end)| end - begin == 2);
         let preprocess = Preprocess {
             out_h: obs_h,
             out_w: obs_w,
@@ -1084,7 +1203,6 @@ impl NativeBreakoutVecEnv {
             rows,
             columns,
             fast_area,
-            fast_two_by_two,
         };
         let stack_size = obs_h
             .checked_mul(obs_w)
@@ -1170,6 +1288,7 @@ impl NativeBreakoutVecEnv {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn step_into(
         &mut self,
         py: Python<'_>,
@@ -1210,42 +1329,56 @@ impl NativeBreakoutVecEnv {
         let frame_stack = self.frame_stack;
         let frame_skip = self.frame_skip;
         let pool = &self.pool;
+        let lanes_per_job = self.lanes.len().div_ceil(pool.current_num_threads());
         py.allow_threads(|| {
             pool.install(|| {
                 self.lanes
-                    .par_iter_mut()
-                    .zip(actions.par_iter())
-                    .zip(obs.par_chunks_mut(obs_per_env))
-                    .zip(rewards.par_iter_mut())
-                    .zip(terminated.par_iter_mut())
-                    .zip(truncated.par_iter_mut())
-                    .zip(signal_data.par_chunks_mut(SIGNALS))
+                    .par_chunks_mut(lanes_per_job)
+                    .zip(actions.par_chunks(lanes_per_job))
+                    .zip(obs.par_chunks_mut(lanes_per_job * obs_per_env))
+                    .zip(rewards.par_chunks_mut(lanes_per_job))
+                    .zip(terminated.par_chunks_mut(lanes_per_job))
+                    .zip(truncated.par_chunks_mut(lanes_per_job))
+                    .zip(signal_data.par_chunks_mut(lanes_per_job * SIGNALS))
                     .for_each(
                         |(
-                            (((((lane, &action), obs_dst), reward_dst), term_dst), trunc_dst),
-                            signal_dst,
+                            (((((lanes, actions), observations), rewards), terminated), truncated),
+                            signals,
                         )| {
-                            let mut reward = 0.0;
-                            let mut done = false;
-                            let mut collision_events = 0i64;
-                            for _ in 0..frame_skip {
-                                let (step_reward, step_done) = step_native(lane, action);
-                                reward += step_reward;
-                                collision_events |= lane.last_collision;
-                                if step_done {
-                                    done = true;
-                                    break;
+                            for index in 0..lanes.len() {
+                                let lane = &mut lanes[index];
+                                let mut reward = 0.0;
+                                let mut done = false;
+                                let mut collision_events = 0i64;
+                                for _ in 0..frame_skip {
+                                    let (step_reward, step_done) =
+                                        step_native(lane, actions[index]);
+                                    reward += step_reward;
+                                    collision_events |= lane.last_collision;
+                                    if step_done {
+                                        done = true;
+                                        break;
+                                    }
                                 }
+                                lane.last_collision = collision_events;
+                                render_and_push(lane, preprocess, frame_stack);
+                                let obs_start = index * obs_per_env;
+                                write_stack(
+                                    lane,
+                                    &mut observations[obs_start..obs_start + obs_per_env],
+                                    frame_stack,
+                                );
+                                if write_info {
+                                    let signal_start = index * SIGNALS;
+                                    write_signals(
+                                        lane,
+                                        &mut signals[signal_start..signal_start + SIGNALS],
+                                    );
+                                }
+                                rewards[index] = reward;
+                                terminated[index] = done;
+                                truncated[index] = false;
                             }
-                            lane.last_collision = collision_events;
-                            render_and_push(lane, preprocess, frame_stack);
-                            write_stack(lane, obs_dst, frame_stack);
-                            if write_info {
-                                write_signals(lane, signal_dst);
-                            }
-                            *reward_dst = reward;
-                            *term_dst = done;
-                            *trunc_dst = false;
                         },
                     );
             })
@@ -1298,6 +1431,7 @@ impl NativeBreakoutVecEnv {
         self.lanes.iter().map(|lane| lane.layout_id).collect()
     }
 
+    #[allow(clippy::type_complexity)]
     fn branch(
         &self,
         states: Vec<Vec<u8>>,
@@ -1361,6 +1495,7 @@ impl NativeBreakoutVecEnv {
         Ok((next_states, observations, rewards, terminated, signals))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn configure_lane(
         &mut self,
         lane: usize,

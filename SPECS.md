@@ -17,3 +17,4 @@ breakout-turbo-env is a Python library for reinforcement-learning researchers an
 - Rewards must equal the per-step change in game score using Atari's row scoring, without independent life-loss or board-clear shaping.
 - Clearing the brick wall must not independently terminate an episode; terminal state follows the five-life Atari game lifecycle.
 - The interactive player must support both a configurable display-rate limit and visible uncapped play.
+- Supported distributions must be limited to Apple-silicon macOS and x86-64 Linux.

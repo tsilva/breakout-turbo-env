@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 import importlib.util
-from pathlib import Path
+import json
 import sys
+from pathlib import Path
 
 import numpy as np
-
 from breakout_turbo_env import BreakoutVecEnv
-
 
 _SCRIPT = Path(__file__).parents[1] / "train_jerk.py"
 _SPEC = importlib.util.spec_from_file_location("train_jerk", _SCRIPT)

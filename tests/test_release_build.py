@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import tomllib
-
+import zipfile
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_BUILD = (
@@ -25,7 +25,10 @@ def test_release_workflow_restores_platform_scoped_cargo_cache():
         encoding="utf-8"
     )
 
-    assert "uses: actions/cache@v4" in workflow
+    assert (
+        "uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4"
+        in workflow
+    )
     assert "path: target-release" in workflow
     assert (
         "key: cargo-release-v1-${{ matrix.platform }}-${{ runner.arch }}-${{ github.sha }}"
@@ -57,3 +60,49 @@ def test_core_package_keeps_play_and_training_dependencies_optional():
     assert project["dependencies"] == ["gymnasium>=1.1,<2", "numpy>=1.26,<3"]
     assert project["optional-dependencies"]["play"] == ["pygame>=2.6,<3"]
     assert project["optional-dependencies"]["train"] == ["torch>=2.7,<3"]
+
+
+def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):
+    release_build = release_build_module()
+    version = release_build.read_version()
+    wheel = tmp_path / (
+        f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_arm64.whl"
+    )
+    dist_info = f"breakout_turbo_env-{version}.dist-info"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("breakout_turbo_env/__init__.py", "")
+        archive.writestr("breakout_turbo_env/env.py", "")
+        archive.writestr("breakout_turbo_env/_breakout_turbo.abi3.so", "")
+        archive.writestr(
+            f"{dist_info}/METADATA",
+            "\n".join(
+                (
+                    "Metadata-Version: 2.4",
+                    "License-Expression: MIT",
+                    "Project-URL: Repository, https://github.com/tsilva/breakout-turbo-env",
+                )
+            ),
+        )
+        archive.writestr(f"{dist_info}/licenses/LICENSE", "MIT License")
+
+    result = release_build.audit_wheel(wheel, version)
+    assert all(result["checks"].values())
+
+    unsupported = tmp_path / (
+        f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_x86_64.whl"
+    )
+    wheel.rename(unsupported)
+    result = release_build.audit_wheel(unsupported, version)
+    assert not result["checks"]["supported_platform_tag"]
+
+
+def test_release_workflow_publishes_sdist_checksums_and_github_release():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "build-sdist" in workflow
+    assert "*.tar.gz" in workflow
+    assert "uv python install 3.11 3.14" in workflow
+    assert "sha256sum * > SHA256SUMS" in workflow
+    assert "gh release create" in workflow

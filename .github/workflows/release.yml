@@ -31,18 +31,20 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.13"
 
       - name: Install release environment
         run: uv sync --frozen --extra dev
@@ -74,7 +76,12 @@ jobs:
             check-pypi --version "${{ steps.version.outputs.version }}"
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: |
+          .venv/bin/python -m ruff check .
+          cargo fmt --check
+
+      - name: Check Rust lints
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Check Rust release build
         run: cargo check --release
@@ -99,21 +106,23 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.13"
 
       - name: Restore Cargo build cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: target-release
           key: cargo-release-v1-${{ matrix.platform }}-${{ runner.arch }}-${{ github.sha }}
@@ -130,7 +139,7 @@ jobs:
             --platform "${{ matrix.platform }}" \
             --version "${{ needs.validate.outputs.version }}"
 
-      - name: Smoke built wheel
+      - name: Smoke built wheel on supported Python bounds
         shell: bash
         run: |
           set -euo pipefail
@@ -141,11 +150,15 @@ jobs:
             printf '%s\n' "${wheels[@]}" >&2
             exit 1
           fi
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
-            smoke-wheel "${wheels[0]}"
+          uv python install 3.11 3.14
+          for python_version in 3.11 3.14; do
+            python_path="$(uv python find "$python_version")"
+            .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+              smoke-wheel "${wheels[0]}" --python "$python_path"
+          done
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.platform }}-wheel-v${{ needs.validate.outputs.version }}
           path: wheelhouse-v${{ needs.validate.outputs.version }}-${{ matrix.platform }}/*.whl
@@ -159,33 +172,40 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.13"
 
       - name: Install release environment
         run: uv sync --frozen --extra dev
 
       - name: Download macOS wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: macos-wheel-v${{ needs.validate.outputs.version }}
           path: wheelhouse-v${{ needs.validate.outputs.version }}-macos
 
       - name: Download Linux wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: linux-wheel-v${{ needs.validate.outputs.version }}
           path: wheelhouse-v${{ needs.validate.outputs.version }}-linux
+
+      - name: Build source distribution
+        run: |
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            build-sdist --version "${{ needs.validate.outputs.version }}"
 
       - name: Final audit
         run: |
@@ -197,12 +217,13 @@ jobs:
           mkdir -p dist
           cp wheelhouse-v${{ needs.validate.outputs.version }}-macos/*.whl dist/
           cp wheelhouse-v${{ needs.validate.outputs.version }}-linux/*.whl dist/
+          cp wheelhouse-v${{ needs.validate.outputs.version }}-sdist/*.tar.gz dist/
 
       - name: Upload final wheel bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-v${{ needs.validate.outputs.version }}
-          path: dist/*.whl
+          path: dist/*
           if-no-files-found: error
 
   publish:
@@ -219,10 +240,40 @@ jobs:
       id-token: write
     steps:
       - name: Download audited distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-v${{ needs.validate.outputs.version }}
           path: dist
 
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+
+  github-release:
+    name: Create GitHub release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - validate
+      - publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download audited distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-v${{ needs.validate.outputs.version }}
+          path: dist
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Create release with notes and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "breakout-turbo-env ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag

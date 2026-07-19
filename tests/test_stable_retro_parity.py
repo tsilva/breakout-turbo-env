@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STABLE_REPO = Path(
     os.environ.get("BREAKOUT_STABLE_RETRO_REPO", REPO_ROOT.parent / "stable-retro-turbo")

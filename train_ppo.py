@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
+from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
 
 _LAYOUTS = ("full", "checker", "tunnel", "sparse")
 _FEATURES = 6

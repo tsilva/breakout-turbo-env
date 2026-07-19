@@ -3,21 +3,50 @@ from __future__ import annotations
 import hashlib
 import inspect
 
+import gymnasium as gym
 import numpy as np
 import pytest
-from gymnasium.vector import AutoresetMode
-
 from breakout_turbo_env import (
-    BreakoutVecEnv,
     FIXED_POINT_ONE,
     RAW_HEIGHT,
     RENDER_HEIGHT,
     RENDER_WIDTH,
+    BreakoutVecEnv,
 )
+from gymnasium.vector import AutoresetMode
 
 
 def make_env(**kwargs):
     return BreakoutVecEnv(num_envs=4, num_threads=2, **kwargs)
+
+
+def test_registered_vector_entry_point_matches_declared_spaces():
+    env = gym.make_vec("BreakoutTurbo-v0", num_envs=4, num_threads=2)
+    try:
+        observations, infos = env.reset(seed=7)
+        assert env.observation_space.contains(observations)
+        actions = np.array([0, 1, 2, 3], dtype=np.uint8)
+        transition = env.step(actions)
+        assert env.observation_space.contains(transition[0])
+        assert transition[1].shape == (4,)
+        assert transition[2].shape == (4,)
+        assert transition[3].shape == (4,)
+        assert isinstance(infos, dict)
+        assert isinstance(transition[4], dict)
+    finally:
+        env.close()
+
+
+def test_reset_seed_is_accepted_but_does_not_change_deterministic_start():
+    env = make_env(frame_skip=1)
+    try:
+        first_obs, _ = env.reset(seed=1)
+        first_state = env.get_state()
+        second_obs, _ = env.reset(seed=999)
+        assert env.get_state() == first_state
+        np.testing.assert_array_equal(second_obs, first_obs)
+    finally:
+        env.close()
 
 
 def test_contract_is_chw_manual_and_no_maxpool():
@@ -296,6 +325,44 @@ def test_thread_count_does_not_change_trace():
         serial.step(actions)
         parallel.step(actions)
     assert serial.get_state() == parallel.get_state()
+
+
+@pytest.mark.parametrize(
+    "preprocessing",
+    [
+        {},
+        {"obs_resize": (80, 96), "obs_crop": (8, 4, 3, 5)},
+        {
+            "obs_resize": (47, 53),
+            "obs_crop": (8, 4, 3, 5),
+            "obs_crop_mode": "mask",
+            "obs_crop_fill": 17,
+        },
+    ],
+)
+def test_incremental_observations_match_forced_full_rebuild(preprocessing):
+    incremental = make_env(info_filter="none", **preprocessing)
+    rebuilt = make_env(info_filter="none", **preprocessing)
+    starts = np.arange(4, dtype=np.int32)
+    first, _ = incremental.reset(options={"start_indices": starts})
+    second, _ = rebuilt.reset(options={"start_indices": starts})
+    np.testing.assert_array_equal(first, second)
+
+    rng = np.random.default_rng(20260719)
+    for _ in range(100):
+        actions = rng.integers(0, 4, size=4, dtype=np.uint8)
+        rebuilt.set_state(rebuilt.get_state())  # Invalidate only the visual cache.
+        incremental_step = incremental.step(actions)
+        rebuilt_step = rebuilt.step(actions)
+        for actual, expected in zip(incremental_step[:4], rebuilt_step[:4]):
+            np.testing.assert_array_equal(actual, expected)
+        assert incremental.get_state() == rebuilt.get_state()
+        terminated = incremental_step[2]
+        if terminated.any():
+            options = {"reset_mask": terminated, "start_indices": starts}
+            incremental_reset, _ = incremental.reset(options=options)
+            rebuilt_reset, _ = rebuilt.reset(options=options)
+            np.testing.assert_array_equal(incremental_reset, rebuilt_reset)
 
 
 def test_optimized_hot_path_preserves_golden_observation_trace():

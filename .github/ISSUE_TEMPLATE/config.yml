@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/tsilva/breakout-turbo-env/discussions
+    about: Ask for help or discuss research uses.
+  - name: Private vulnerability report
+    url: https://github.com/tsilva/breakout-turbo-env/security/advisories/new
+    about: Report security issues privately.

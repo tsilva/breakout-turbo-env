@@ -9,14 +9,13 @@ import json
 import os
 import re
 import subprocess
+import tarfile
 import tempfile
+import tomllib
 import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-
-import tomllib
-
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 VERSION_PATH = REPO_ROOT / "VERSION.txt"
@@ -290,6 +289,10 @@ def wheelhouse(version: str, platform: str) -> Path:
     return REPO_ROOT / f"wheelhouse-v{version}-{platform}"
 
 
+def sdist_house(version: str) -> Path:
+    return REPO_ROOT / f"wheelhouse-v{version}-sdist"
+
+
 def shell_quote(value: str | Path) -> str:
     import shlex
 
@@ -363,22 +366,50 @@ def build_platform(args: argparse.Namespace) -> None:
     )
 
 
+def build_sdist(args: argparse.Namespace) -> None:
+    version = args.version or read_version()
+    validate_version(version)
+    output = sdist_house(version)
+    output.mkdir(parents=True, exist_ok=True)
+    run([str(PYTHON), "-m", "maturin", "sdist", "--out", str(output)])
+
+
 def audit_wheel(wheel: Path, version: str) -> dict[str, object]:
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
+        metadata_name = next(
+            (name for name in names if name.endswith(".dist-info/METADATA")),
+            None,
+        )
+        metadata = (
+            archive.read(metadata_name).decode("utf-8")
+            if metadata_name is not None
+            else ""
+        )
     extension_entries = [
         name
         for name in names
         if name.startswith(f"{IMPORT_NAME}/{EXTENSION_NAME}")
         and name.endswith((".so", ".pyd"))
     ]
+    expected_macos = f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_arm64.whl"
+    expected_linux = (
+        f"breakout_turbo_env-{version}-cp311-abi3-manylinux_2_28_x86_64.whl"
+    )
     checks = {
         "version_in_filename": version in wheel.name,
         "abi3_wheel": "abi3" in wheel.name,
+        "supported_platform_tag": wheel.name in {expected_macos, expected_linux},
         "has_package_init": f"{IMPORT_NAME}/__init__.py" in names,
         "has_env_source": f"{IMPORT_NAME}/env.py" in names,
         "has_extension": bool(extension_entries),
-        "has_metadata": any(name.endswith(".dist-info/METADATA") for name in names),
+        "has_metadata": metadata_name is not None,
+        "has_license_file": any(name.endswith(".dist-info/licenses/LICENSE") for name in names),
+        "declares_mit": "License-Expression: MIT" in metadata,
+        "has_repository_url": (
+            "Project-URL: Repository, https://github.com/tsilva/breakout-turbo-env"
+            in metadata
+        ),
         "no_bytecode": not any(
             "__pycache__" in Path(name).parts or name.endswith(".pyc") for name in names
         ),
@@ -409,11 +440,46 @@ def find_wheels(version: str) -> list[Path]:
     return sorted(wheels)
 
 
+def find_sdist(version: str) -> Path | None:
+    archives = sorted(sdist_house(version).glob(f"*{version}*.tar.gz"))
+    if len(archives) == 1:
+        return archives[0]
+    return None
+
+
+def audit_sdist(archive_path: Path, version: str) -> dict[str, object]:
+    prefix = f"breakout_turbo_env-{version}/"
+    with tarfile.open(archive_path, "r:gz") as archive:
+        names = archive.getnames()
+    checks = {
+        "expected_filename": archive_path.name == f"breakout_turbo_env-{version}.tar.gz",
+        "has_pyproject": f"{prefix}pyproject.toml" in names,
+        "has_cargo_manifest": f"{prefix}Cargo.toml" in names,
+        "has_rust_source": f"{prefix}src/lib.rs" in names,
+        "has_python_source": f"{prefix}python/breakout_turbo_env/env.py" in names,
+        "has_readme": f"{prefix}README.md" in names,
+        "has_license": f"{prefix}LICENSE" in names,
+    }
+    return {"sdist": str(archive_path), "checks": checks}
+
+
+def assert_sdist_audit(result: dict[str, object]) -> None:
+    checks = result["checks"]
+    assert isinstance(checks, dict)
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        print(json.dumps(result, indent=2))
+        raise SystemExit(f"sdist audit failed: {failed}")
+
+
 def audit_wheels(args: argparse.Namespace) -> None:
     version = args.version or read_version()
-    wheels = [wheel.resolve() for wheel in args.wheels] or find_wheels(version)
-    if len(wheels) < 2:
+    supplied = [wheel.resolve() for wheel in args.wheels]
+    wheels = supplied or find_wheels(version)
+    if not supplied and len(wheels) < 2:
         raise SystemExit(f"expected macOS and Linux wheels for {version}, found {wheels}")
+    if not wheels:
+        raise SystemExit(f"no wheels supplied for {version}")
     results = [audit_wheel(wheel, version) for wheel in wheels]
     assert_audits(results)
     print(json.dumps(results, indent=2))
@@ -432,34 +498,48 @@ def smoke_wheel(args: argparse.Namespace) -> None:
         prefix="breakout-turbo-env-wheel-smoke.", dir=release_temp_dir()
     ) as temporary:
         target = Path(temporary)
+        environment = target / "venv"
+        constraints = target / "constraints.txt"
+        run(["uv", "venv", "--python", str(args.python), str(environment)])
+        smoke_python = environment / "bin" / "python"
+        run(
+            [
+                "uv",
+                "export",
+                "--frozen",
+                "--no-dev",
+                "--no-emit-project",
+                "--output-file",
+                str(constraints),
+            ],
+            stdout=subprocess.DEVNULL,
+        )
         run(
             [
                 "uv",
                 "pip",
                 "install",
                 "--python",
-                str(args.python),
-                "--no-deps",
-                "--target",
-                str(target),
+                str(smoke_python),
+                "--constraints",
+                str(constraints),
                 str(wheel),
             ]
         )
         code = f"""
 import {IMPORT_NAME}
 from {IMPORT_NAME} import {EXTENSION_NAME}
-assert {IMPORT_NAME}.__file__.startswith({str(target)!r})
-assert {EXTENSION_NAME}.__file__.startswith({str(target)!r})
 assert hasattr({IMPORT_NAME}, "BreakoutVecEnv")
+env = {IMPORT_NAME}.BreakoutVecEnv(num_envs=2, num_threads=1)
+obs, infos = env.reset()
+assert obs.shape == (2, 4, 84, 84)
+env.close()
 print({IMPORT_NAME}.__file__)
 print({EXTENSION_NAME}.__file__)
 """
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(target)
         subprocess.run(
-            [str(args.python), "-c", code],
+            [str(smoke_python), "-I", "-c", code],
             cwd=release_temp_dir(),
-            env=env,
             check=True,
         )
 
@@ -479,12 +559,19 @@ def final_check(args: argparse.Namespace) -> None:
         raise SystemExit(f"expected exactly two wheels for {version}, found {wheels}")
     results = [audit_wheel(wheel, version) for wheel in wheels]
     assert_audits(results)
-    run([str(PYTHON), "-m", "twine", "check", *[str(wheel) for wheel in wheels]])
+    sdist = find_sdist(version)
+    if sdist is None:
+        raise SystemExit(f"expected exactly one source archive for {version}")
+    sdist_result = audit_sdist(sdist, version)
+    assert_sdist_audit(sdist_result)
+    artifacts = [*wheels, sdist]
+    run([str(PYTHON), "-m", "twine", "check", *[str(path) for path in artifacts]])
     print(
         json.dumps(
             {
                 "audits": results,
-                "sha256": {str(wheel): sha256(wheel) for wheel in wheels},
+                "sdist_audit": sdist_result,
+                "sha256": {str(path): sha256(path) for path in artifacts},
             },
             indent=2,
         )
@@ -524,6 +611,10 @@ def main() -> None:
     platform.add_argument("--version")
     platform.add_argument("--platform", choices=("macos", "linux"), required=True)
     platform.set_defaults(func=build_platform)
+
+    sdist = commands.add_parser("build-sdist")
+    sdist.add_argument("--version")
+    sdist.set_defaults(func=build_sdist)
 
     audit = commands.add_parser("audit-wheels")
     audit.add_argument("--version")

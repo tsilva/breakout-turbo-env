@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import numpy as np
-
+import pytest
 from breakout_turbo_env.play import (
     _hud_text,
     _limit_frame_rate,

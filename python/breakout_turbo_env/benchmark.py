@@ -26,7 +26,9 @@ def build_parser(prog: str = "breakout-turbo-env benchmark") -> argparse.Argumen
     parser.add_argument(
         "--threads",
         type=int,
-        default=min(NUM_ENVS, os.cpu_count() or NUM_ENVS),
+        # The optimized 16-lane path is small enough that dispatching fewer,
+        # larger jobs beats one worker per lane on supported machines.
+        default=min(NUM_ENVS, os.cpu_count() or NUM_ENVS, 2),
     )
     return parser
 

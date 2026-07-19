@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-
 from breakout_turbo_env import BreakoutVecEnv
 from breakout_turbo_env.play import (
     _DEFAULT_PLAY_SCALE,
@@ -18,6 +17,7 @@ from breakout_turbo_env.play import (
     _print_episode_stats,
     _scaled_frame_size,
 )
+
 from train_ppo import _FEATURES, features
 
 

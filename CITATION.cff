@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use breakout-turbo-env in research, please cite this software."
+title: "breakout-turbo-env"
+type: software
+authors:
+  - family-names: Silva
+    given-names: Tiago
+repository-code: "https://github.com/tsilva/breakout-turbo-env"
+url: "https://pypi.org/project/breakout-turbo-env/"
+license: MIT
+version: 0.3.0
+date-released: 2026-07-19
+abstract: >-
+  A deterministic, fixed-point, high-throughput Breakout vector environment
+  with Gymnasium-compatible lifecycle, rendering, snapshots, and branching.
+keywords:
+  - reinforcement learning
+  - Gymnasium
+  - Breakout
+  - vector environment
+  - deterministic simulation

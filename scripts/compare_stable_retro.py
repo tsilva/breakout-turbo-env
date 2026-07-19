@@ -18,7 +18,6 @@ from typing import Any
 
 import numpy as np
 
-
 RED = np.array([200, 72, 72], dtype=np.uint8)
 GAME = "Breakout-Atari2600-v0"
 
@@ -266,7 +265,7 @@ class StableReference:
 
 
 def compare_corner(reference: StableReference, corner: str, frames: int) -> list[Transition]:
-    from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
+    from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
 
     if corner == "top-left":
         dx_sign, start = -1, Point(10, 34)
@@ -339,7 +338,7 @@ def compare_episode(
     seed: int | None = None,
 ) -> EpisodeResult:
     """Run one live cartridge/Turbo episode with identical generated actions."""
-    from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
+    from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
 
     reference.reopen()
     stable_frame, stable_info = reference.env.reset()

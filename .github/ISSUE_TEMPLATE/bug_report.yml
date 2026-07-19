@@ -1,0 +1,65 @@
+name: Bug report
+description: Report reproducible incorrect behavior on a supported platform
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for the report. Do not include ROMs, save states, extracted
+        assets, or private security details.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Supported platform
+      options:
+        - Apple-silicon macOS 11+
+        - x86-64 Linux (glibc 2.28+)
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: 3.13.5
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands, code, actions, and configuration.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This report contains no ROM, save state, or extracted game asset.
+          required: true
+        - label: This is not a private security report.
+          required: true

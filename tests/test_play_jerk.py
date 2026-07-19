@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
-
 
 _SCRIPT = Path(__file__).parents[1] / "play_jerk.py"
 _SPEC = importlib.util.spec_from_file_location("play_jerk", _SCRIPT)

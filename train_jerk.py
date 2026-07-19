@@ -16,8 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-
-from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
+from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
 
 
 @dataclass(frozen=True)

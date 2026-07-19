@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_HELPER = (
     REPO_ROOT / ".codex" / "skills" / "build-release" / "scripts" / "release_build.py"
@@ -95,7 +94,9 @@ def run_checks(skip_checks: bool) -> None:
         return
     env = os.environ.copy()
     env.setdefault("UV_CACHE_DIR", ".uv-cache")
+    run([str(PYTHON), "-m", "ruff", "check", "."], env=env)
     run(["cargo", "fmt", "--check"])
+    run(["cargo", "clippy", "--all-targets", "--", "-D", "warnings"])
     run(["cargo", "check", "--release"])
     run([str(PYTHON), "-m", "maturin", "develop", "--release"], env=env)
     env["BREAKOUT_REQUIRE_STABLE_RETRO"] = "1"

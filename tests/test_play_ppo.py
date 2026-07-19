@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
-
 
 _ROOT = Path(__file__).parents[1]
 _TRAIN_SPEC = importlib.util.spec_from_file_location("train_ppo", _ROOT / "train_ppo.py")
