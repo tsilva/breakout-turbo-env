@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import tomllib
 import zipfile
 from pathlib import Path
@@ -25,10 +26,7 @@ def test_release_workflow_restores_platform_scoped_cargo_cache():
         encoding="utf-8"
     )
 
-    assert (
-        "uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4"
-        in workflow
-    )
+    assert re.search(r"uses: actions/cache@[0-9a-f]{40} # v\d+", workflow)
     assert "path: target-release" in workflow
     assert (
         "key: cargo-release-v1-${{ matrix.platform }}-${{ runner.arch }}-${{ github.sha }}"
