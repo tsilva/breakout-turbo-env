@@ -50,7 +50,7 @@ def test_package_metadata_exposes_public_project_identity():
 def test_readme_uses_pypi_safe_images_and_local_links_resolve():
     markdown_paths = [
         REPO_ROOT / "README.md",
-        *sorted((REPO_ROOT / "docs").glob("*.md")),
+        *sorted((REPO_ROOT / "docs").rglob("*.md")),
     ]
     link_pattern = re.compile(r"!?\[[^]]*\]\(([^)]+)\)")
 

@@ -49,6 +49,8 @@ speedup; pass `--json` to preserve machine-readable evidence.
 
 ## Reference community-preview run
 
-Release-specific benchmark results live in GitHub release notes. They are
-evidence for a particular machine and workload, not a universal performance
-guarantee. The command above remains the source of truth for local performance.
+Release-specific benchmark reports are preserved with their raw runs and
+machine details. See the
+[v0.3.0 macOS ARM64 report](benchmarks/v0.3.0-macos-arm64.md). These are evidence
+for a particular machine and workload, not a universal performance guarantee.
+The command above remains the source of truth for local performance.

@@ -13,6 +13,10 @@ Fixed-point Rust physics owns game state and parallel stepping. Python exposes
 manual reset, policy-ready observations, native rendering, exact snapshots, and
 side-effect-free action branching.
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/tsilva/breakout-turbo-env/main/demo.gif" alt="Native Breakout gameplay rendered by breakout-turbo-env" width="320" />
+</div>
+
 ## Install
 
 Requires Python 3.11+ on Apple-silicon macOS 11+ or x86-64 Linux with glibc

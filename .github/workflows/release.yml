@@ -258,6 +258,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - name: Download audited distributions
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -268,6 +271,12 @@ jobs:
         working-directory: dist
         run: sha256sum * > SHA256SUMS
 
+      - name: Prepare release notes
+        run: |
+          python scripts/release_notes.py \
+            --version "${{ needs.validate.outputs.version }}" \
+            > release-notes.md
+
       - name: Create release with notes and artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -275,5 +284,5 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "breakout-turbo-env ${GITHUB_REF_NAME}" \
-            --generate-notes \
+            --notes-file release-notes.md \
             --verify-tag

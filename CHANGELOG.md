@@ -14,6 +14,8 @@ releases; changes will be recorded here.
   source distributions.
 - Public environment, benchmark, and release-validation documentation.
 - GitHub release notes and clean-install artifact smoke tests.
+- A reproducible matched Stable Retro benchmark harness and v0.3.0 evidence
+  report.
 
 ### Changed
 

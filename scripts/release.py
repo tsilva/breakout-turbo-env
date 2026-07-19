@@ -121,6 +121,7 @@ def create_commit_and_tag(version: str) -> tuple[str, bool]:
             "pyproject.toml",
             "Cargo.toml",
             "Cargo.lock",
+            "CITATION.cff",
             "uv.lock",
         ]
     )

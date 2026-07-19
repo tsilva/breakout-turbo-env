@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ VERSION_PATH = REPO_ROOT / "VERSION.txt"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CARGO_TOML = REPO_ROOT / "Cargo.toml"
 CARGO_LOCK = REPO_ROOT / "Cargo.lock"
+CITATION = REPO_ROOT / "CITATION.cff"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 PACKAGE_NAME = "breakout-turbo-env"
 IMPORT_NAME = "breakout_turbo_env"
@@ -77,6 +79,13 @@ def cargo_lock_version() -> str:
     return section_version(CARGO_LOCK, "package", package_name=PACKAGE_NAME)
 
 
+def citation_version() -> str:
+    for line in CITATION.read_text(encoding="utf-8").splitlines():
+        if line.startswith("version: "):
+            return line.split(":", 1)[1].strip()
+    raise RuntimeError(f"could not find version in {CITATION}")
+
+
 def validate_version(version: str) -> None:
     if VERSION_RE.fullmatch(version) is None:
         raise SystemExit(f"unsupported version format: {version!r}")
@@ -122,6 +131,15 @@ def write_version(version: str) -> None:
     VERSION_PATH.write_text(f"{version}\n", encoding="utf-8")
     replace_section_version(PYPROJECT, "project", version)
     replace_section_version(CARGO_TOML, "package", version)
+    citation = CITATION.read_text(encoding="utf-8")
+    citation = re.sub(r"(?m)^version: .+$", f"version: {version}", citation, count=1)
+    citation = re.sub(
+        r"(?m)^date-released: .+$",
+        f"date-released: {datetime.date.today().isoformat()}",
+        citation,
+        count=1,
+    )
+    CITATION.write_text(citation, encoding="utf-8")
 
 
 def versions() -> dict[str, str]:
@@ -130,6 +148,7 @@ def versions() -> dict[str, str]:
         "pyproject": pyproject_version(),
         "cargo_toml": cargo_version(),
         "cargo_lock": cargo_lock_version(),
+        "citation": citation_version(),
     }
 
 
