@@ -1,8 +1,9 @@
-.PHONY: benchmark develop develop-release play release test test-python test-rust
+.PHONY: benchmark develop develop-release play release test test-python test-rust test-stable-retro
 
 PYTHON ?= .venv/bin/python
 UV_CACHE_DIR ?= .uv-cache
 PYTEST_ARGS ?=
+STABLE_RETRO_REPO ?= $(abspath ../stable-retro-turbo)
 
 develop:
 	UV_CACHE_DIR=$(UV_CACHE_DIR) $(PYTHON) -m maturin develop
@@ -25,5 +26,11 @@ test-rust:
 
 test-python:
 	$(PYTHON) -m pytest $(PYTEST_ARGS)
+
+test-stable-retro: develop-release
+	BREAKOUT_REQUIRE_STABLE_RETRO=1 \
+	BREAKOUT_STABLE_RETRO_REPO="$(STABLE_RETRO_REPO)" \
+	PYTHONPATH="$(CURDIR)/python:$(STABLE_RETRO_REPO)" \
+	$(PYTHON) -m pytest -m stable_retro tests/test_stable_retro_parity.py $(PYTEST_ARGS)
 
 test: test-rust test-python

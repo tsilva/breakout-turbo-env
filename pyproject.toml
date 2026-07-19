@@ -38,6 +38,9 @@ features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "stable_retro: live frame-by-frame differential tests requiring the local Breakout ROM",
+]
 
 [tool.uv]
 exclude-newer = "2026-07-04T00:00:00Z"

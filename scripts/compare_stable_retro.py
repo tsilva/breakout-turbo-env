@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Differential probe for Stable Retro Breakout and breakout-turbo-env.
 
-This is an optional developer tool.  It deliberately does not make the ROM or
-Stable Retro a package dependency.  Run it with the Python environment from a
-local stable-retro-turbo checkout; the probe discovers the reference ball-x
-RAM variable from rendered motion instead of relying on a recorded trace.
+This reusable developer/test harness deliberately does not make the ROM or
+Stable Retro a package dependency. It discovers the reference ball-x RAM
+variable from rendered motion instead of relying on a recorded trace.
 """
 
 from __future__ import annotations
@@ -508,7 +507,11 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo / "python"))
     data_dir = args.stable_repo / "stable_retro/data/stable" / GAME
-    missing = [name for name in ("Start.state", "data.json", "scenario.json") if not (data_dir / name).is_file()]
+    missing = [
+        name
+        for name in ("rom.a26", "Start.state", "data.json", "scenario.json")
+        if not (data_dir / name).is_file()
+    ]
     if missing:
         raise SystemExit(f"Stable Retro reference data is incomplete: {', '.join(missing)}")
     reference = StableReference(data_dir)
