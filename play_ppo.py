@@ -12,7 +12,12 @@ from pathlib import Path
 import numpy as np
 
 from breakout_turbo_env import BreakoutVecEnv
-from breakout_turbo_env.play import _hud_text, _print_episode_stats
+from breakout_turbo_env.play import (
+    _DEFAULT_PLAY_SCALE,
+    _hud_text,
+    _print_episode_stats,
+    _scaled_frame_size,
+)
 from train_ppo import _FEATURES, features
 
 
@@ -67,7 +72,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Play a trained PPO policy")
     parser.add_argument("--policy", type=Path, help="PPO .npz policy; defaults to the newest PPO run")
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"))
-    parser.add_argument("--scale", type=int, default=8)
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=_DEFAULT_PLAY_SCALE,
+        help=f"integer window scale (default: {_DEFAULT_PLAY_SCALE})",
+    )
     parser.add_argument("--fps", type=int, default=60)
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--max-frames", type=int, default=0)
@@ -91,10 +101,8 @@ def run(policy: PpoPolicy, *, scale: int, fps: int, loop: bool, max_frames: int 
     starts = np.array([policy.layout], dtype=object)
     _, info = env.reset(options={"reset_mask": reset_mask, "start_ids": starts})
     height, width = env.render().shape[:2]
-    game_size = (width * scale, height * scale)
-    hud_height = max(28, scale * 4)
-    screen = pygame.display.set_mode((game_size[0], game_size[1] + hud_height))
-    hud_font = pygame.font.Font(None, max(18, scale * 3))
+    game_size = _scaled_frame_size(width, height, scale)
+    screen = pygame.display.set_mode(game_size)
     clock = pygame.time.Clock()
     episode = 1
     episode_return = 0.0
@@ -144,11 +152,11 @@ def run(policy: PpoPolicy, *, scale: int, fps: int, loop: bool, max_frames: int 
             surface = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
             if scale != 1:
                 surface = pygame.transform.scale(surface, game_size)
-            screen.fill((16, 18, 24))
             text = _hud_text(info, paused=paused) + f"    PPO {episode_steps:05d}"
-            screen.blit(hud_font.render(text, True, (245, 245, 245)), (10, (hud_height - hud_font.get_height()) // 2))
-            screen.blit(surface, (0, hud_height))
-            pygame.display.set_caption(f"Breakout Turbo | PPO replay | {policy.layout}")
+            screen.blit(surface, (0, 0))
+            pygame.display.set_caption(
+                f"Breakout Turbo | PPO replay | {policy.layout} | {text}"
+            )
             pygame.display.flip()
             clock.tick(fps)
             displayed += 1

@@ -64,3 +64,7 @@ def test_latest_policy_uses_newest_run(tmp_path):
     _write_policy(old)
     _write_policy(new)
     assert play_ppo.latest_policy(tmp_path) == new
+
+
+def test_parser_uses_the_shared_rlab_sized_viewer_scale():
+    assert play_ppo._parser().parse_args([]).scale == 4

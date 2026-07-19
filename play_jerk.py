@@ -13,7 +13,12 @@ from typing import Any
 import numpy as np
 
 from breakout_turbo_env import BreakoutVecEnv
-from breakout_turbo_env.play import _hud_text, _print_episode_stats
+from breakout_turbo_env.play import (
+    _DEFAULT_PLAY_SCALE,
+    _hud_text,
+    _print_episode_stats,
+    _scaled_frame_size,
+)
 
 _LAYOUTS = ("full", "checker", "tunnel", "sparse")
 
@@ -65,7 +70,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Play a trained JERK action tape")
     parser.add_argument("--policy", type=Path, help="policy JSON; defaults to the latest JERK run")
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"), help="artifact root")
-    parser.add_argument("--scale", type=int, default=8, help="integer window scale")
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=_DEFAULT_PLAY_SCALE,
+        help=f"integer window scale (default: {_DEFAULT_PLAY_SCALE})",
+    )
     parser.add_argument("--fps", type=int, default=60, help="action-tape steps per second")
     parser.add_argument("--loop", action="store_true", help="restart the tape after it ends")
     parser.add_argument(
@@ -101,10 +111,8 @@ def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int
     start_ids = np.array([policy.layout], dtype=object)
     _, info = env.reset(options={"reset_mask": reset_mask, "start_ids": start_ids})
     raw_height, raw_width = env.render().shape[:2]
-    game_size = (raw_width * scale, raw_height * scale)
-    hud_height = max(28, scale * 4)
-    screen = pygame.display.set_mode((game_size[0], game_size[1] + hud_height))
-    hud_font = pygame.font.Font(None, max(18, scale * 3))
+    game_size = _scaled_frame_size(raw_width, raw_height, scale)
+    screen = pygame.display.set_mode(game_size)
     clock = pygame.time.Clock()
     action_index = 0
     episode = 1
@@ -177,15 +185,11 @@ def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int
             surface = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
             if scale != 1:
                 surface = pygame.transform.scale(surface, game_size)
-            screen.fill((16, 18, 24))
             status = _hud_text(info, paused=paused)
             status += f"    JERK {action_index:05d}/{len(policy.actions):05d}"
-            hud_surface = hud_font.render(status, True, (245, 245, 245))
-            screen.blit(hud_surface, (10, (hud_height - hud_surface.get_height()) // 2))
-            screen.blit(surface, (0, hud_height))
+            screen.blit(surface, (0, 0))
             pygame.display.set_caption(
-                f"Breakout Turbo | JERK replay | {policy.layout} | "
-                f"action {action_index}/{len(policy.actions)}"
+                f"Breakout Turbo | JERK replay | {policy.layout} | {status}"
             )
             pygame.display.flip()
             clock.tick(fps)

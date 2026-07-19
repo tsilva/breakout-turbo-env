@@ -53,6 +53,10 @@ def test_run_rejects_invalid_display_values():
         play_jerk.run(policy, scale=0, fps=60, loop=False)
 
 
+def test_parser_uses_the_shared_rlab_sized_viewer_scale():
+    assert play_jerk._parser().parse_args([]).scale == 4
+
+
 def test_latest_policy_selects_newest_timestamped_run(tmp_path):
     old = tmp_path / "jerk" / "20260712-100000" / "policy.json"
     new = tmp_path / "jerk" / "20260712-110000" / "policy.json"

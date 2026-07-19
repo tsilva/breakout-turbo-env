@@ -8,6 +8,11 @@ import numpy as np
 from .env import BreakoutVecEnv
 
 _LAYOUTS = ("full", "checker", "tunnel", "sparse")
+_DEFAULT_PLAY_SCALE = 4
+
+
+def _scaled_frame_size(width: int, height: int, scale: int) -> tuple[int, int]:
+    return width * scale, height * scale
 
 
 class _ObservationViewer:
@@ -38,7 +43,12 @@ class _ObservationViewer:
 def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=prog, description="Play breakout-turbo-env manually")
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
-    parser.add_argument("--scale", type=int, default=2, help="integer window scale")
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=_DEFAULT_PLAY_SCALE,
+        help=f"integer window scale (default: {_DEFAULT_PLAY_SCALE})",
+    )
     parser.add_argument("--fps", type=int, default=60, help="display updates per second")
     parser.add_argument(
         "--uncapped",
@@ -133,7 +143,7 @@ def run(
         options={"reset_mask": reset_mask, "start_indices": start_indices}
     )
     raw_height, raw_width = env.render().shape[:2]
-    game_size = (raw_width * scale, raw_height * scale)
+    game_size = _scaled_frame_size(raw_width, raw_height, scale)
     screen = pygame.display.set_mode(game_size)
     observation_viewer = _ObservationViewer(pygame, observation) if show_obs else None
     clock = None if uncapped else pygame.time.Clock()

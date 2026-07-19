@@ -7,6 +7,7 @@ from breakout_turbo_env.play import (
     _hud_text,
     _limit_frame_rate,
     _print_episode_stats,
+    _scaled_frame_size,
     build_parser,
     run,
 )
@@ -15,7 +16,7 @@ from breakout_turbo_env.play import (
 def test_play_parser_defaults_and_layout_selection():
     defaults = build_parser().parse_args([])
     assert defaults.layout == "full"
-    assert defaults.scale == 2
+    assert defaults.scale == 4
     assert defaults.frame_skip == 1
     assert defaults.show_obs is False
     assert defaults.uncapped is False
@@ -25,6 +26,10 @@ def test_play_parser_defaults_and_layout_selection():
     assert selected.layout == "tunnel"
     assert selected.scale == 4
     assert selected.uncapped is True
+
+
+def test_default_player_window_preserves_the_native_frame_aspect_ratio():
+    assert _scaled_frame_size(160, 210, 4) == (640, 840)
 
 
 def test_uncapped_mode_skips_the_frame_limiter():
