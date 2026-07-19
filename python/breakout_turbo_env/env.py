@@ -7,7 +7,14 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.vector import AutoresetMode, VectorEnv
 
-from ._breakout_turbo import FIXED_POINT_ONE, RAW_HEIGHT, RAW_WIDTH, NativeBreakoutVecEnv
+from ._breakout_turbo import (
+    FIXED_POINT_ONE,
+    RAW_HEIGHT,
+    RAW_WIDTH,
+    RENDER_HEIGHT,
+    RENDER_WIDTH,
+    NativeBreakoutVecEnv,
+)
 
 _SIGNAL_NAMES = (
     "paddle_x",
@@ -25,6 +32,20 @@ _SIGNAL_NAMES = (
     "pending_reset",
 )
 _START_IDS = ("full", "checker", "tunnel", "sparse")
+_ATARI_2600_NTSC_PALETTE = np.array(
+    [
+        [0, 0, 0],
+        [136, 136, 136],
+        [200, 72, 72],
+        [192, 104, 56],
+        [176, 120, 48],
+        [160, 160, 40],
+        [72, 160, 72],
+        [64, 72, 200],
+        [64, 152, 128],
+    ],
+    dtype=np.uint8,
+)
 
 
 class BreakoutVecEnv(VectorEnv):
@@ -292,16 +313,20 @@ class BreakoutVecEnv(VectorEnv):
         }
 
     def render(self):
-        indexed = np.frombuffer(self.native.render_indexed(0), dtype=np.uint8).reshape(RAW_HEIGHT, RAW_WIDTH)
-        palette = np.array(
-            [[0, 0, 0], [180, 180, 180], [255, 255, 255], [80, 40, 200],
-             [50, 100, 220], [40, 170, 210], [60, 200, 120], [220, 190, 60], [230, 90, 60]],
-            dtype=np.uint8,
+        indexed = np.frombuffer(self.native.render_indexed(0), dtype=np.uint8).reshape(
+            RENDER_HEIGHT, RENDER_WIDTH
         )
-        return palette[indexed]
+        return _ATARI_2600_NTSC_PALETTE[indexed]
 
     def close(self):
         self._closed = True
 
 
-__all__ = ["BreakoutVecEnv", "FIXED_POINT_ONE"]
+__all__ = [
+    "BreakoutVecEnv",
+    "FIXED_POINT_ONE",
+    "RAW_HEIGHT",
+    "RAW_WIDTH",
+    "RENDER_HEIGHT",
+    "RENDER_WIDTH",
+]

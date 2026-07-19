@@ -3,18 +3,41 @@ from __future__ import annotations
 import pytest
 import numpy as np
 
-from breakout_turbo_env.play import _hud_text, _print_episode_stats, build_parser, run
+from breakout_turbo_env.play import (
+    _hud_text,
+    _limit_frame_rate,
+    _print_episode_stats,
+    build_parser,
+    run,
+)
 
 
 def test_play_parser_defaults_and_layout_selection():
     defaults = build_parser().parse_args([])
     assert defaults.layout == "full"
-    assert defaults.scale == 8
+    assert defaults.scale == 2
     assert defaults.frame_skip == 1
     assert defaults.show_obs is False
-    selected = build_parser().parse_args(["--layout", "tunnel", "--scale", "4"])
+    assert defaults.uncapped is False
+    selected = build_parser().parse_args(
+        ["--layout", "tunnel", "--scale", "4", "--uncapped"]
+    )
     assert selected.layout == "tunnel"
     assert selected.scale == 4
+    assert selected.uncapped is True
+
+
+def test_uncapped_mode_skips_the_frame_limiter():
+    class Clock:
+        calls: list[int] = []
+
+        def tick(self, fps):
+            self.calls.append(fps)
+
+    clock = Clock()
+    _limit_frame_rate(clock, 60)
+    _limit_frame_rate(None, 60)
+    assert clock.calls == [60]
 
 
 def test_play_rejects_invalid_runtime_values():
@@ -33,7 +56,7 @@ def test_episode_stats_are_printed(capsys):
         info,
         episode=3,
         layout="full",
-        episode_return=58.0,
+        episode_return=48.0,
         display_steps=309,
         elapsed=5.25,
     )
@@ -41,6 +64,8 @@ def test_episode_stats_are_printed(capsys):
     assert "episode_end episode=3" in output
     assert "outcome=cleared" in output
     assert "score=48" in output
+    assert "return=48.0" in output
+    assert "bricks_cleared=48" in output
     assert "native_ticks=1234" in output
 
 

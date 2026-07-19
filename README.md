@@ -56,6 +56,7 @@ env.close()
 
 ```bash
 uv run --extra play breakout-turbo-env play    # open the interactive player
+uv run --extra play breakout-turbo-env play --uncapped  # visible play without an FPS limit
 uv run breakout-turbo-env benchmark            # measure the fixed 16-lane policy path
 uv run pytest                                  # run Python contract and regression tests
 cargo test --lib                               # run Rust library tests
@@ -70,9 +71,9 @@ For player, benchmark, training, and replay options, append `--help` to the corr
 
 ## Notes
 
-- The standard observation batch is grayscale `uint8`, CHW, and defaults to `(num_envs, 4, 84, 84)`. Actions are `0` (noop), `1` (left), and `2` (right).
+- The standard observation batch is grayscale `uint8`, CHW, and defaults to `(num_envs, 4, 84, 84)`. Actions are `0` (noop), `1` (left), and `2` (right). Rewards match Stable Retro's Breakout scenario: each reward is the score delta, using `7, 7, 4, 4, 1, 1` points from the top brick row to the bottom, with no life-loss penalty or board-clear bonus.
 - The environment is manual-reset only: after a terminal lane, call `reset(options={"reset_mask": mask})` before stepping that lane again. Built-in layouts are `full`, `checker`, `tunnel`, and `sparse`.
-- `render()` returns the raw 96×96 RGB game frame; training observations use the processed grayscale stack. The interactive player accepts Left/Right or A/D, Space or R to reset, P to pause, and Escape to quit.
+- `render()` returns the native 160×210 RGB frame geometry and Stella palette used by Stable Retro for Atari 2600 Breakout; training observations remain a separate processed 96×96 grayscale source stack. The interactive player accepts Left/Right or A/D, Space or R to reset, P to pause, and Escape to quit.
 - PyPI provides wheels for macOS 11+ on Apple silicon and glibc 2.28+ Linux on x86-64. Other platforms require a source build.
 - Training outputs live in `runs/<algorithm>/<timestamp>/`. JERK policies use `policy.json`; PPO policies use `policy.npz`.
 - `make release` requires a clean branch synchronized with its upstream. The release workflow builds and audits macOS arm64 and Linux x86_64 wheels before publishing to PyPI.

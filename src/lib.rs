@@ -8,6 +8,8 @@ use rayon::prelude::*;
 
 const RAW_W: usize = 96;
 const RAW_H: usize = 96;
+const RENDER_W: usize = 160;
+const RENDER_H: usize = 210;
 const FP: i32 = 1 << 16;
 const BALL_R: i32 = FP;
 const PADDLE_W: i32 = 18 * FP;
@@ -18,6 +20,7 @@ const BALL_SPEED_X: i32 = FP / 2;
 const BALL_SPEED_Y: i32 = FP;
 const BRICK_COLS: usize = 8;
 const BRICK_ROWS: usize = 6;
+const BRICK_ROW_POINTS: [i32; BRICK_ROWS] = [7, 7, 4, 4, 1, 1];
 const BRICK_W: i32 = 10 * FP;
 const BRICK_H: i32 = 4 * FP;
 const BRICK_GAP_X: i32 = 1 * FP;
@@ -162,6 +165,7 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
 }
 
 fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
+    let score_before = lane.score;
     lane.last_collision = 0;
     match action {
         1 => lane.paddle_x -= PADDLE_SPEED,
@@ -172,7 +176,6 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
 
     // Fixed microsteps make collision behavior deterministic and prevent tunnelling.
     const MICROSTEPS: i32 = 4;
-    let mut reward = 0.0f32;
     for _ in 0..MICROSTEPS {
         let previous_x = lane.ball_x;
         let previous_y = lane.ball_y;
@@ -216,8 +219,7 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
             lane.bricks &= !(1u64 << index);
             clear_brick_from_render_cache(lane, index);
             bounce_from_brick(lane, index, previous_x, previous_y);
-            lane.score += 1;
-            reward += 1.0;
+            lane.score += BRICK_ROW_POINTS[index / BRICK_COLS];
             lane.last_collision |= COLLISION_BRICK;
         }
 
@@ -227,13 +229,12 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
             if lane.lives <= 0 {
                 lane.pending_reset = true;
                 lane.tick += 1;
-                return (reward - 1.0, true);
+                return ((lane.score - score_before) as f32, true);
             }
             lane.ball_x = RAW_W as i32 * FP / 2;
             lane.ball_y = 82 * FP;
             lane.ball_vx = BALL_SPEED_X;
             lane.ball_vy = -BALL_SPEED_Y;
-            reward -= 1.0;
             break;
         }
     }
@@ -241,10 +242,9 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
     if lane.bricks == 0 {
         lane.last_collision |= COLLISION_CLEAR;
         lane.pending_reset = true;
-        reward += 10.0;
-        return (reward, true);
+        return ((lane.score - score_before) as f32, true);
     }
-    (reward, false)
+    ((lane.score - score_before) as f32, false)
 }
 
 fn colliding_brick(x: i32, y: i32, mask: u64) -> Option<usize> {
@@ -320,38 +320,112 @@ fn bounce_from_brick(lane: &mut Lane, index: usize, previous_x: i32, previous_y:
     }
 }
 
+const DIGITS: [[u8; 5]; 10] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111],
+    [0b100, 0b100, 0b100, 0b100, 0b100],
+    [0b111, 0b001, 0b111, 0b100, 0b111],
+    [0b111, 0b001, 0b111, 0b001, 0b111],
+    [0b101, 0b101, 0b111, 0b001, 0b001],
+    [0b111, 0b100, 0b111, 0b001, 0b111],
+    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b111, 0b001, 0b001, 0b001, 0b001],
+    [0b111, 0b101, 0b111, 0b101, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b111],
+];
+
+fn draw_digit(frame: &mut [u8], digit: usize, x0: usize) {
+    for (row, bits) in DIGITS[digit % 10].iter().enumerate() {
+        for col in 0..3 {
+            if bits & (1 << (2 - col)) == 0 {
+                continue;
+            }
+            for y in 5 + row * 2..5 + row * 2 + 2 {
+                frame[y * RENDER_W + x0 + col * 4..y * RENDER_W + x0 + col * 4 + 4].fill(1);
+            }
+        }
+    }
+}
+
+fn render_ball_y(source_y: usize) -> usize {
+    match source_y {
+        0..=7 => 31 + source_y * 26 / 7,
+        8..=35 => 57 + (source_y - 7) * 36 / 28,
+        36..=90 => 93 + (source_y - 35) * 96 / 55,
+        _ => 189 + (source_y - 90) * 20 / 6,
+    }
+}
+
 fn render_indexed(lane: &Lane) -> Vec<u8> {
-    let mut frame = vec![0u8; RAW_W * RAW_H];
+    let mut frame = vec![0u8; RENDER_W * RENDER_H];
+
+    // Atari's status display lives inside the video signal: three score
+    // digits, the selected game number, and the current player number.
+    let score = lane.score.clamp(0, 999) as usize;
+    draw_digit(&mut frame, score / 100, 36);
+    draw_digit(&mut frame, (score / 10) % 10, 52);
+    draw_digit(&mut frame, score % 10, 68);
+    draw_digit(&mut frame, (lane.layout_id + 1).clamp(0, 9) as usize, 100);
+    draw_digit(&mut frame, 1, 136);
+
+    // Stella's native frame uses a 15-line header bar and 8-pixel
+    // playfield walls in the same neutral gray.
+    for y in 17..32 {
+        frame[y * RENDER_W..(y + 1) * RENDER_W].fill(1);
+    }
+    for y in 32..189 {
+        frame[y * RENDER_W..y * RENDER_W + 8].fill(1);
+        frame[y * RENDER_W + 152..(y + 1) * RENDER_W].fill(1);
+    }
+
+    // TIA playfield pixels meet edge-to-edge, so a complete wall appears as
+    // six uninterrupted color bands. The turbo environment's eight logical
+    // brick columns divide the same 144-pixel playfield without adding gaps.
     for row in 0..BRICK_ROWS {
         for col in 0..BRICK_COLS {
             let index = row * BRICK_COLS + col;
             if (lane.bricks >> index) & 1 == 0 {
                 continue;
             }
-            let x0 = 4 + col * 11;
-            let y0 = 7 + row * 5;
-            for y in y0..(y0 + 4).min(RAW_H) {
-                for x in x0..(x0 + 10).min(RAW_W) {
-                    frame[y * RAW_W + x] = 3 + row as u8;
-                }
+            let x0 = 8 + col * 18;
+            let y0 = 57 + row * 6;
+            for y in y0..y0 + 6 {
+                frame[y * RENDER_W + x0..y * RENDER_W + x0 + 18].fill(2 + row as u8);
             }
         }
     }
-    let px = (lane.paddle_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
-    let paddle_y = (PADDLE_Y / FP) as usize;
-    let paddle_h = (PADDLE_H / FP) as usize;
-    let paddle_w = (PADDLE_W / FP) as usize;
-    for y in paddle_y..paddle_y + paddle_h {
-        for x in px..(px + paddle_w).min(RAW_W) {
-            frame[y * RAW_W + x] = 1;
-        }
+
+    let source_paddle_x = (lane.paddle_x / FP).clamp(0, 78) as usize;
+    // Stella's paddle travels from x=8 through x=144. At the right limit its
+    // final eight pixels merge with the fixed red edge cap.
+    let paddle_x = 8 + source_paddle_x * 136 / 78;
+    for y in 189..193 {
+        frame[y * RENDER_W + paddle_x..y * RENDER_W + paddle_x + 16].fill(2);
     }
-    let bx = (lane.ball_x / FP).clamp(0, RAW_W as i32 - 1) as usize;
-    let by = (lane.ball_y / FP).clamp(0, RAW_H as i32 - 1) as usize;
-    for y in by.saturating_sub(1)..=(by + 1).min(RAW_H - 1) {
-        for x in bx.saturating_sub(1)..=(bx + 1).min(RAW_W - 1) {
-            frame[y * RAW_W + x] = 2;
-        }
+
+    let source_ball_x = (lane.ball_x / FP).clamp(1, RAW_W as i32 - 1) as usize;
+    let source_ball_y = (lane.ball_y / FP).clamp(0, RAW_H as i32 - 1) as usize;
+    // Preserve all three Stella anchors: left x=8, launch x=80, and right
+    // x=150. The physical arena is asymmetric around its integer launch
+    // center, so each half needs its own linear projection.
+    let ball_x = if source_ball_x <= 48 {
+        8 + ((source_ball_x - 1) * 72 + 46) / 47
+    } else {
+        80 + ((source_ball_x - 48) * 70 + 23) / 47
+    };
+    let ball_y = render_ball_y(source_ball_y)
+        .saturating_sub(2)
+        .min(RENDER_H - 4);
+    for y in ball_y..ball_y + 4 {
+        frame[y * RENDER_W + ball_x..y * RENDER_W + ball_x + 2].fill(2);
+    }
+
+    // The original four-paddle kernel leaves the inactive players clipped at
+    // the lower wall edges in Stella's output.
+    for y in 189..196 {
+        frame[y * RENDER_W..y * RENDER_W + 8].fill(8);
+    }
+    for y in 189..195 {
+        frame[y * RENDER_W + 152..(y + 1) * RENDER_W].fill(2);
     }
     frame
 }
@@ -1122,6 +1196,8 @@ fn _breakout_turbo(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeBreakoutVecEnv>()?;
     module.add("RAW_WIDTH", RAW_W)?;
     module.add("RAW_HEIGHT", RAW_H)?;
+    module.add("RENDER_WIDTH", RENDER_W)?;
+    module.add("RENDER_HEIGHT", RENDER_H)?;
     module.add("FIXED_POINT_ONE", FP)?;
     Ok(())
 }

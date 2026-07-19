@@ -38,8 +38,13 @@ class _ObservationViewer:
 def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=prog, description="Play breakout-turbo-env manually")
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
-    parser.add_argument("--scale", type=int, default=8, help="integer window scale")
+    parser.add_argument("--scale", type=int, default=2, help="integer window scale")
     parser.add_argument("--fps", type=int, default=60, help="display updates per second")
+    parser.add_argument(
+        "--uncapped",
+        action="store_true",
+        help="render visibly as fast as possible without an FPS limiter",
+    )
     parser.add_argument("--frame-skip", type=int, default=1)
     parser.add_argument(
         "--show-obs",
@@ -73,7 +78,7 @@ def _print_episode_stats(
         "episode_end"
         f" episode={episode} layout={layout} outcome={outcome}"
         f" score={score} return={episode_return:.1f} lives={lives}"
-        f" bricks_cleared={score} native_ticks={native_ticks}"
+        f" bricks_cleared={48 - bricks_remaining} native_ticks={native_ticks}"
         f" display_steps={display_steps} elapsed_seconds={elapsed:.2f}",
         flush=True,
     )
@@ -87,6 +92,11 @@ def _hud_text(info: dict[str, np.ndarray], *, paused: bool) -> str:
     return f"SCORE {score:03d}    LIVES {lives}    BRICKS {bricks:02d}{status}"
 
 
+def _limit_frame_rate(clock, fps: int) -> None:
+    if clock is not None:
+        clock.tick(fps)
+
+
 def run(
     *,
     layout: str,
@@ -95,6 +105,7 @@ def run(
     frame_skip: int,
     max_frames: int = 0,
     show_obs: bool = False,
+    uncapped: bool = False,
 ) -> None:
     if scale <= 0 or fps <= 0 or frame_skip <= 0 or max_frames < 0:
         raise ValueError("scale, fps, and frame-skip must be positive; max-frames must be non-negative")
@@ -123,11 +134,9 @@ def run(
     )
     raw_height, raw_width = env.render().shape[:2]
     game_size = (raw_width * scale, raw_height * scale)
-    hud_height = max(28, scale * 4)
-    screen = pygame.display.set_mode((game_size[0], game_size[1] + hud_height))
-    hud_font = pygame.font.Font(None, max(18, scale * 3))
+    screen = pygame.display.set_mode(game_size)
     observation_viewer = _ObservationViewer(pygame, observation) if show_obs else None
-    clock = pygame.time.Clock()
+    clock = None if uncapped else pygame.time.Clock()
     running = True
     paused = False
     frame_count = 0
@@ -191,23 +200,20 @@ def run(
             surface = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
             if scale != 1:
                 surface = pygame.transform.scale(surface, game_size)
-            screen.fill((16, 18, 24))
-            hud_surface = hud_font.render(
-                _hud_text(info, paused=paused), True, (245, 245, 245)
-            )
-            screen.blit(hud_surface, (10, (hud_height - hud_surface.get_height()) // 2))
-            screen.blit(surface, (0, hud_height))
+            screen.blit(surface, (0, 0))
             score = int(info.get("score", np.zeros(1, dtype=np.int64))[0])
             lives = int(info.get("lives", np.ones(1, dtype=np.int64))[0])
             bricks = int(info.get("bricks_remaining", np.zeros(1, dtype=np.int64))[0])
             state = "PAUSED" if paused else "playing"
+            speed = "uncapped" if uncapped else f"{fps} FPS"
             pygame.display.set_caption(
-                f"Breakout Turbo | {state} | score {score} | lives {lives} | bricks {bricks}"
+                f"Breakout Turbo | {state} | {speed} | score {score}"
+                f" | lives {lives} | bricks {bricks}"
             )
             pygame.display.flip()
             if observation_viewer is not None:
                 observation_viewer.show(observation)
-            clock.tick(fps)
+            _limit_frame_rate(clock, fps)
             frame_count += 1
             if max_frames and frame_count >= max_frames:
                 running = False
@@ -227,6 +233,7 @@ def main(argv=None, *, prog: str = "breakout-turbo-env play") -> None:
         frame_skip=args.frame_skip,
         max_frames=args.max_frames,
         show_obs=args.show_obs,
+        uncapped=args.uncapped,
     )
 
 
