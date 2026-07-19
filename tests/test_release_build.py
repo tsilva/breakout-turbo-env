@@ -59,7 +59,8 @@ def test_core_package_keeps_play_and_training_dependencies_optional():
 
     assert project["dependencies"] == ["gymnasium>=1.1,<2", "numpy>=1.26,<3"]
     assert project["optional-dependencies"]["play"] == ["pygame>=2.6,<3"]
-    assert project["optional-dependencies"]["train"] == ["torch>=2.7,<3"]
+    assert project["optional-dependencies"]["train"] == ["torch>=2.13,<3"]
+    assert "pytest>=9.0.3,<10" in project["optional-dependencies"]["dev"]
 
 
 def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):

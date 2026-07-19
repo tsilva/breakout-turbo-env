@@ -438,7 +438,7 @@ def test_atari_digital_paddle_inertia_trace():
 
 
 @pytest.mark.parametrize(
-    "row,expected_reward", enumerate((7.0, 7.0, 4.0, 4.0, 1.0, 1.0))
+    "row,expected_reward", tuple(enumerate((7.0, 7.0, 4.0, 4.0, 1.0, 1.0)))
 )
 def test_reward_matches_stable_retro_score_delta_by_brick_row(row, expected_reward):
     env = make_env(frame_skip=1)

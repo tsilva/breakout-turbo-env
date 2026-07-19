@@ -16,6 +16,8 @@ releases; changes will be recorded here.
 - GitHub release notes and clean-install artifact smoke tests.
 - A reproducible matched Stable Retro benchmark harness and v0.3.0 evidence
   report.
+- Patched PyO3, PyTorch, and pytest dependency lines for a clean community
+  security baseline.
 
 ### Changed
 

@@ -1263,7 +1263,7 @@ impl NativeBreakoutVecEnv {
         let preprocess = &self.preprocess;
         let frame_stack = self.frame_stack;
         let pool = &self.pool;
-        py.allow_threads(|| {
+        py.detach(|| {
             pool.install(|| {
                 self.lanes
                     .par_iter_mut()
@@ -1330,7 +1330,7 @@ impl NativeBreakoutVecEnv {
         let frame_skip = self.frame_skip;
         let pool = &self.pool;
         let lanes_per_job = self.lanes.len().div_ceil(pool.current_num_threads());
-        py.allow_threads(|| {
+        py.detach(|| {
             pool.install(|| {
                 self.lanes
                     .par_chunks_mut(lanes_per_job)

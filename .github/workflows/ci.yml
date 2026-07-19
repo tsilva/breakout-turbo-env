@@ -66,6 +66,37 @@ jobs:
       - name: Run tests
         run: cargo test --lib
 
+  optional-extras:
+    name: Optional player and trainer extras
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.13"
+
+      - name: Install optional extras
+        run: uv sync --frozen --extra dev --extra play --extra train
+
+      - name: Build native extension
+        run: .venv/bin/python -m maturin develop --release
+
+      - name: Smoke optional imports and commands
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          .venv/bin/python -c "import pygame, torch; print(pygame.version.ver, torch.__version__)"
+          .venv/bin/python train.py ppo --help
+          .venv/bin/python -m breakout_turbo_env.play --help
+
   package:
     name: Package ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}

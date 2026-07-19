@@ -53,12 +53,12 @@ play = [
   "pygame>=2.6,<3",
 ]
 train = [
-  "torch>=2.7,<3",
+  "torch>=2.13,<3",
 ]
 dev = [
   "cibuildwheel>=2.23.4,<4",
   "maturin>=1.8,<2",
-  "pytest>=8,<9",
+  "pytest>=9.0.3,<10",
   "ruff>=0.12,<1",
   "twine>=6.2,<7",
 ]
@@ -81,7 +81,7 @@ target-version = "py311"
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.uv]
-exclude-newer = "2026-07-04T00:00:00Z"
+exclude-newer = "2026-07-12T00:00:00Z"
 constraint-dependencies = [
   "mistralai!=2.4.6",
   "guardrails-ai!=0.10.1",
