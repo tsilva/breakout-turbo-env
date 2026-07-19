@@ -41,6 +41,18 @@ class Transition:
     turbo_reward: float
 
 
+@dataclass(frozen=True)
+class EpisodeResult:
+    policy: str
+    seed: int | None
+    exact: bool
+    frames: int
+    completed: bool
+    score: int
+    lives: int
+    mismatch: dict[str, Any] | None
+
+
 def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     padded = np.pad(mask.astype(np.int8), (1, 1))
     edges = np.diff(padded)
@@ -154,7 +166,7 @@ class StableReference:
             state="Start",
             info=str(self._base_info),
             scenario=str(self._scenario),
-            inttype=retro.data.Integrations.ALL,
+            inttype=self._retro.data.Integrations.ALL,
             render_mode="rgb_array",
         )
         try:
@@ -166,16 +178,24 @@ class StableReference:
         data.setdefault("info", {})["ball_x_probe"] = {"address": address, "type": "|u1"}
         data["info"]["paddle_x_probe"] = {"address": paddle_address, "type": "|u1"}
         self._temporary = tempfile.TemporaryDirectory(prefix="breakout-parity-")
-        info_path = Path(self._temporary.name) / "data.json"
-        info_path.write_text(json.dumps(data))
-        self.env = retro.make(
+        self._info_path = Path(self._temporary.name) / "data.json"
+        self._info_path.write_text(json.dumps(data))
+        self.env = self._make_env()
+
+    def _make_env(self) -> Any:
+        return self._retro.make(
             GAME,
             state="Start",
-            info=str(info_path),
+            info=str(self._info_path),
             scenario=str(self._scenario),
-            inttype=retro.data.Integrations.ALL,
+            inttype=self._retro.data.Integrations.ALL,
             render_mode="rgb_array",
         )
+
+    def reopen(self) -> None:
+        """Start with fresh emulator-side analog input state."""
+        self.env.close()
+        self.env = self._make_env()
 
     def close(self) -> None:
         self.env.close()
@@ -233,40 +253,17 @@ class StableReference:
         self.env.set_value("paddle_x_probe", x + self.paddle_offset)
         self.env.data.update_ram()
 
+    def paddle_x(self) -> int:
+        return int(self.env.data.lookup_value("paddle_x_probe")) - self.paddle_offset
 
-def turbo_ball_point(frame: np.ndarray) -> Point:
-    point = find_ball(frame, min_y=31, max_y=188)
-    if point is None:
-        raise RuntimeError("could not locate turbo ball in rendered frame")
-    return point
+    def awaiting_fire(self) -> bool:
+        return int(self.env.data.lookup_value("ball_y")) == 0
 
+    def score(self) -> int:
+        return int(self.env.data.lookup_value("score"))
 
-def calibrate_turbo(env: Any, target: Point, dx_sign: int, dy_sign: int) -> tuple[int, int]:
-    """Find source coordinates whose renderer lands nearest the target pixel."""
-    from breakout_turbo_env import FIXED_POINT_ONE, RAW_HEIGHT, RAW_WIDTH
-
-    common = dict(
-        paddle_x=40 * FIXED_POINT_ONE,
-        ball_vx=dx_sign * FIXED_POINT_ONE,
-        ball_vy=dy_sign * FIXED_POINT_ONE,
-        bricks=(1 << 108) - 1,
-        lives=5,
-    )
-    best_x = (10**9, 0)
-    for source_x in range(RAW_WIDTH):
-        env.configure_lane(0, ball_x=source_x * FIXED_POINT_ONE, ball_y=50 * FIXED_POINT_ONE, **common)
-        point = find_ball(env.render(), min_y=31, max_y=188)
-        if point is None:
-            continue
-        best_x = min(best_x, (abs(point.x - target.x), source_x))
-    best_y = (10**9, 0)
-    for source_y in range(RAW_HEIGHT):
-        env.configure_lane(0, ball_x=48 * FIXED_POINT_ONE, ball_y=source_y * FIXED_POINT_ONE, **common)
-        point = find_ball(env.render(), min_y=28, max_y=189)
-        if point is None:
-            continue
-        best_y = min(best_y, (abs(point.y - target.y), source_y))
-    return best_x[1], best_y[1]
+    def lives(self) -> int:
+        return int(self.env.data.lookup_value("lives"))
 
 
 def compare_corner(reference: StableReference, corner: str, frames: int) -> list[Transition]:
@@ -283,7 +280,7 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
 
     turbo = BreakoutVecEnv(num_envs=1, num_threads=1, frame_skip=1, frame_stack=1)
     turbo.reset()
-    source_x, source_y = calibrate_turbo(turbo, start, dx_sign, -1)
+    source_x, source_y = start.x, start.y
     turbo.configure_lane(
         0,
         paddle_x=40 * FIXED_POINT_ONE,
@@ -323,13 +320,185 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
     return rows
 
 
+def reflect_playfield_x(value: float) -> float:
+    """Reflect a projected ball coordinate inside the Atari wall bounds."""
+    low, high = 7.0, 151.0
+    while value < low or value > high:
+        if value < low:
+            value = 2 * low - value
+        if value > high:
+            value = 2 * high - value
+    return value
+
+
+def compare_episode(
+    reference: StableReference,
+    *,
+    policy: str,
+    max_frames: int,
+    aim: int = 8,
+    seed: int | None = None,
+) -> EpisodeResult:
+    """Run one live cartridge/Turbo episode with identical generated actions."""
+    from breakout_turbo_env import BreakoutVecEnv, FIXED_POINT_ONE
+
+    reference.reopen()
+    stable_frame, stable_info = reference.env.reset()
+    turbo = BreakoutVecEnv(num_envs=1, num_threads=1, frame_skip=1, frame_stack=1)
+    _, turbo_info = turbo.reset()
+    turbo_frame = turbo.render()
+    rng = np.random.default_rng(seed)
+    label = f"predictive-aim{aim}" if policy == "predictive" else policy
+
+    def mismatch(
+        frame: int,
+        stable_reward: float,
+        turbo_reward: float,
+        stable_terminated: bool,
+        turbo_terminated: bool,
+        stable_truncated: bool,
+        turbo_truncated: bool,
+    ) -> dict[str, Any] | None:
+        different = np.any(stable_frame != turbo_frame, axis=2)
+        pixel_count = int(np.count_nonzero(different))
+        reward_differs = float(stable_reward) != float(turbo_reward)
+        terminal_differs = stable_terminated != turbo_terminated or stable_truncated != turbo_truncated
+        stable_score = reference.score()
+        turbo_score = int(turbo_info["score"][0])
+        stable_lives = reference.lives()
+        turbo_lives = int(turbo_info["lives"][0])
+        state_differs = stable_score != turbo_score or stable_lives != turbo_lives
+        if not (pixel_count or reward_differs or terminal_differs or state_differs):
+            return None
+        bbox = None
+        stable_colors: list[list[int]] = []
+        turbo_colors: list[list[int]] = []
+        if pixel_count:
+            ys, xs = np.where(different)
+            bbox = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+            stable_colors = np.unique(stable_frame[ys, xs], axis=0).astype(int).tolist()
+            turbo_colors = np.unique(turbo_frame[ys, xs], axis=0).astype(int).tolist()
+        return {
+            "frame": frame,
+            "different_pixels": pixel_count,
+            "bbox": bbox,
+            "stable_colors": stable_colors,
+            "turbo_colors": turbo_colors,
+            "stable_reward": float(stable_reward),
+            "turbo_reward": float(turbo_reward),
+            "stable_terminated": stable_terminated,
+            "turbo_terminated": turbo_terminated,
+            "stable_truncated": stable_truncated,
+            "turbo_truncated": turbo_truncated,
+            "stable_score": stable_score,
+            "turbo_score": turbo_score,
+            "stable_lives": stable_lives,
+            "turbo_lives": turbo_lives,
+            "stable_ball": asdict(reference.point()),
+            "turbo_ball": {
+                "x": int(turbo_info["ball_x"][0] // FIXED_POINT_ONE),
+                "y": int(turbo_info["ball_y"][0] // FIXED_POINT_ONE),
+            },
+            "turbo_velocity": {
+                "x": int(turbo_info["ball_vx"][0]),
+                "y": int(turbo_info["ball_vy"][0]),
+            },
+            "turbo_collision_events": int(turbo_info["collision_events"][0]),
+        }
+
+    try:
+        initial_mismatch = mismatch(0, 0.0, 0.0, False, False, False, False)
+        if initial_mismatch is not None:
+            return EpisodeResult(label, seed, False, 0, False, 0, 5, initial_mismatch)
+
+        for frame in range(1, max_frames + 1):
+            fire = reference.awaiting_fire()
+            if fire:
+                direction = 0
+            elif policy == "tracking":
+                ball_x = reference.point().x
+                paddle_x = reference.paddle_x()
+                direction = -1 if ball_x < paddle_x + 6 else 1 if ball_x > paddle_x + 10 else 0
+            elif policy == "predictive":
+                ball_x = float(turbo_info["ball_x"][0]) / FIXED_POINT_ONE
+                ball_y = float(turbo_info["ball_y"][0]) / FIXED_POINT_ONE
+                ball_vx = float(turbo_info["ball_vx"][0]) / FIXED_POINT_ONE
+                ball_vy = float(turbo_info["ball_vy"][0]) / FIXED_POINT_ONE
+                paddle_x = float(turbo_info["paddle_x"][0]) / FIXED_POINT_ONE
+                target = paddle_x
+                if ball_vy > 0:
+                    target = reflect_playfield_x(ball_x + ball_vx * (186 - ball_y) / ball_vy) - aim
+                direction = -1 if target < paddle_x else 1 if target > paddle_x else 0
+            elif policy == "random":
+                direction = int(rng.integers(-1, 2))
+            else:
+                raise ValueError(policy)
+
+            turbo_action = 1 if fire else 3 if direction < 0 else 2 if direction > 0 else 0
+            stable_frame, stable_reward, stable_terminated, stable_truncated, stable_info = reference.env.step(
+                reference.action(direction, fire=fire)
+            )
+            _, turbo_reward, turbo_terminated, turbo_truncated, turbo_info = turbo.step(
+                np.asarray([turbo_action], dtype=np.uint8)
+            )
+            turbo_frame = turbo.render()
+            difference = mismatch(
+                frame,
+                float(stable_reward),
+                float(turbo_reward[0]),
+                bool(stable_terminated),
+                bool(turbo_terminated[0]),
+                bool(stable_truncated),
+                bool(turbo_truncated[0]),
+            )
+            if difference is not None:
+                return EpisodeResult(
+                    label,
+                    seed,
+                    False,
+                    frame,
+                    False,
+                    reference.score(),
+                    reference.lives(),
+                    difference,
+                )
+            if stable_terminated or stable_truncated:
+                return EpisodeResult(
+                    label,
+                    seed,
+                    True,
+                    frame,
+                    True,
+                    reference.score(),
+                    reference.lives(),
+                    None,
+                )
+        return EpisodeResult(
+            label,
+            seed,
+            True,
+            max_frames,
+            False,
+            reference.score(),
+            reference.lives(),
+            None,
+        )
+    finally:
+        turbo.close()
+
+
 def parse_args() -> argparse.Namespace:
     repo = Path(__file__).resolve().parents[1]
     default_stable = repo.parent / "stable-retro-turbo"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stable-repo", type=Path, default=default_stable)
+    parser.add_argument("--mode", choices=("corners", "episodes", "all"), default="all")
     parser.add_argument("--scenario", choices=("top-left", "top-right", "both"), default="both")
     parser.add_argument("--frames", type=int, default=12)
+    parser.add_argument("--policy", choices=("tracking", "predictive", "random", "all"), default="all")
+    parser.add_argument("--aims", default="4,6,8,10,12", help="comma-separated predictive paddle offsets")
+    parser.add_argument("--seeds", default="0,1,2", help="comma-separated random-policy seeds")
+    parser.add_argument("--max-frames", type=int, default=8000)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     return parser.parse_args()
 
@@ -347,10 +516,35 @@ def main() -> int:
     report: dict[str, Any] = {
         "coordinate_discovery": {"x_offset": reference.x_offset, "y_offset": reference.y_offset},
         "scenarios": {},
+        "corners_exact": True,
+        "episodes": [],
     }
     try:
-        for scenario in scenarios:
-            report["scenarios"][scenario] = [asdict(row) for row in compare_corner(reference, scenario, args.frames)]
+        if args.mode in ("corners", "all"):
+            for scenario in scenarios:
+                report["scenarios"][scenario] = [asdict(row) for row in compare_corner(reference, scenario, args.frames)]
+            report["corners_exact"] = all(
+                row["stable"] == row["turbo"]
+                and row["stable_delta"] == row["turbo_delta"]
+                and row["stable_reward"] == row["turbo_reward"]
+                for rows in report["scenarios"].values()
+                for row in rows
+            )
+        if args.mode in ("episodes", "all"):
+            if args.policy in ("tracking", "all"):
+                report["episodes"].append(
+                    asdict(compare_episode(reference, policy="tracking", max_frames=args.max_frames))
+                )
+            if args.policy in ("predictive", "all"):
+                for aim in (int(value) for value in args.aims.split(",") if value):
+                    report["episodes"].append(
+                        asdict(compare_episode(reference, policy="predictive", aim=aim, max_frames=args.max_frames))
+                    )
+            if args.policy in ("random", "all"):
+                for seed in (int(value) for value in args.seeds.split(",") if value):
+                    report["episodes"].append(
+                        asdict(compare_episode(reference, policy="random", seed=seed, max_frames=args.max_frames))
+                    )
     finally:
         reference.close()
     if args.json:
@@ -366,7 +560,18 @@ def main() -> int:
                     f"turbo=({turbo['x']:3d},{turbo['y']:3d}) d=({td['x']:+d},{td['y']:+d}) "
                     f"reward={row['stable_reward']:.1f}/{row['turbo_reward']:.1f}"
                 )
-    return 0
+        for episode in report["episodes"]:
+            status = "exact" if episode["exact"] else "MISMATCH"
+            suffix = " terminal" if episode["completed"] else ""
+            seed = "" if episode["seed"] is None else f" seed={episode['seed']}"
+            print(
+                f"{episode['policy']}{seed}: {status} through {episode['frames']} frames{suffix}; "
+                f"score={episode['score']} lives={episode['lives']}"
+            )
+            if episode["mismatch"] is not None:
+                print(f"  {json.dumps(episode['mismatch'], sort_keys=True)}")
+    episodes_exact = all(episode["exact"] for episode in report["episodes"])
+    return 0 if report["corners_exact"] and episodes_exact else 1
 
 
 if __name__ == "__main__":

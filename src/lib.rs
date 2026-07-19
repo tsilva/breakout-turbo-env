@@ -15,6 +15,7 @@ const BRICK_COLS: usize = 18;
 const BRICK_ROWS: usize = 6;
 const BRICK_ROW_POINTS: [i32; BRICK_ROWS] = [7, 7, 4, 4, 1, 1];
 const FULL_BRICKS: u128 = (1u128 << (BRICK_COLS * BRICK_ROWS)) - 1;
+const BREAKTHROUGH_VY: i32 = 27 * FP / 8;
 const SIGNALS: usize = 14;
 
 const COLLISION_WALL: i64 = 1;
@@ -159,6 +160,8 @@ struct Lane {
     collision_latches: u8,
     collision_count: u8,
     steep_angle: bool,
+    breakthrough: bool,
+    narrow_paddle: bool,
     brick_contact: bool,
     paddle_charge: u16,
     paddle_repeat: u8,
@@ -190,6 +193,8 @@ impl Lane {
             collision_latches: 0,
             collision_count: 0,
             steep_angle: true,
+            breakthrough: false,
+            narrow_paddle: false,
             brick_contact: false,
             paddle_charge: 2048,
             paddle_repeat: 0,
@@ -255,6 +260,8 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.collision_latches = 0;
     lane.collision_count = 0;
     lane.steep_angle = true;
+    lane.breakthrough = false;
+    lane.narrow_paddle = false;
     lane.brick_contact = false;
     lane.paddle_charge = 2048;
     lane.paddle_repeat = 0;
@@ -268,6 +275,10 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
         lane.stack.copy_within(0..plane, slot * plane);
     }
     lane.stack_head = 0;
+}
+
+fn set_integer_preserving_fraction(value: i32, integer: i32) -> i32 {
+    integer * FP + value.rem_euclid(FP)
 }
 
 fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
@@ -289,13 +300,15 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
             let serve = ((lane.tick + 2) & 3) as usize;
             let serve_x = [16, 78, 80, 142][serve];
             lane.awaiting_fire = false;
-            lane.ball_x = serve_x * FP;
-            lane.ball_y = 122 * FP;
+            lane.ball_x = set_integer_preserving_fraction(lane.ball_x, serve_x);
+            lane.ball_y = set_integer_preserving_fraction(lane.ball_y, 122);
             lane.ball_vx = if serve & 1 == 0 { FP } else { -FP };
             lane.ball_vy = FP;
             lane.collision_latches = 0;
             lane.collision_count = 0;
             lane.steep_angle = true;
+            lane.breakthrough = false;
+            lane.narrow_paddle = false;
             lane.brick_contact = false;
         }
         lane.tick += 1;
@@ -305,8 +318,12 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
     if lane.ball_y / FP >= 217 {
         lane.lives -= 1;
         lane.awaiting_fire = true;
-        lane.ball_y = 9 * FP;
+        lane.ball_y = set_integer_preserving_fraction(lane.ball_y, 9);
+        lane.ball_vx = 0;
+        lane.ball_vy = 0;
         lane.collision_latches = 0;
+        lane.breakthrough = false;
+        lane.narrow_paddle = false;
         lane.last_collision |= COLLISION_LOSS;
         lane.tick += 1;
         if lane.lives <= 0 {
@@ -318,48 +335,72 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
 
     // The ROM consumes collision latches produced by the preceding raster
     // frame.  This one-frame delay is essential at wall/brick corners.
-    if lane.collision_latches & 4 != 0 {
-        let x = lane.ball_x / FP;
-        if (x <= 8 && lane.ball_vx < 0) || (x >= 150 && lane.ball_vx > 0) {
-            lane.ball_vx = -lane.ball_vx;
-            lane.last_collision |= COLLISION_WALL;
-        }
-    }
     if lane.collision_latches & 1 != 0 {
         let y = lane.ball_y / FP;
         if y < 49 {
             lane.brick_contact = false;
             if lane.ball_vy < 0 {
                 lane.ball_vy = -lane.ball_vy;
+                lane.narrow_paddle = true;
                 lane.last_collision |= COLLISION_WALL;
             }
         } else if !lane.brick_contact {
             let index = brick_at_ball(lane);
             if visible_bricks(lane) & (1u128 << index) != 0 {
                 lane.bricks &= !(1u128 << index);
-                lane.score += BRICK_ROW_POINTS[index / BRICK_COLS];
+                let row = index / BRICK_COLS;
+                lane.score += BRICK_ROW_POINTS[row];
                 lane.ball_vy = -lane.ball_vy;
+                if row <= 2 {
+                    lane.breakthrough = true;
+                    apply_breakthrough_speed(lane);
+                }
                 lane.brick_contact = true;
                 lane.last_collision |= COLLISION_BRICK;
             }
         }
     }
     if lane.collision_latches & 2 != 0 && lane.ball_vy > 0 {
-        let relative = (collision_paddle_x + 6 * FP - lane.ball_x) / FP;
-        if relative < 0 {
+        let center_offset = if lane.narrow_paddle { 5 } else { 6 };
+        let relative_fp = collision_paddle_x + center_offset * FP - lane.ball_x;
+        let crossing_branch = if lane.narrow_paddle {
+            0 < relative_fp && relative_fp <= FP
+        } else {
+            (-FP < relative_fp) && (relative_fp <= 0)
+        };
+        if lane.narrow_paddle && relative_fp == 0 {
             lane.ball_vx = lane.ball_vx.abs();
-        } else if relative > 0 {
+            lane.steep_angle = true;
+        } else if crossing_branch {
+            lane.ball_x += if lane.ball_vx < 0 { 4 * FP } else { -4 * FP };
+            lane.ball_vx = -lane.ball_vx.abs();
+            lane.steep_angle = true;
+        } else if relative_fp < 0 {
+            lane.ball_vx = lane.ball_vx.abs();
+        } else if relative_fp > 0 {
             lane.ball_vx = -lane.ball_vx.abs();
         } else {
-            lane.ball_x += if lane.ball_vx < 0 { 4 * FP } else { -4 * FP };
+            unreachable!("wide-paddle zero offset is a crossing branch");
         }
-        if relative != 0 {
-            lane.steep_angle = (1..=4).contains(&relative.abs());
+        if relative_fp != 0 && !crossing_branch {
+            let relative_pixels = (relative_fp / FP).abs();
+            let steep_limit = if lane.narrow_paddle { 3 } else { 4 };
+            lane.steep_angle = (1..=steep_limit).contains(&relative_pixels);
         }
         lane.collision_count = (lane.collision_count + 1).min(12);
         apply_atari_speed(lane);
         lane.ball_vy = -lane.ball_vy.abs();
         lane.last_collision |= COLLISION_PADDLE;
+    }
+    // The ROM resolves the horizontal playfield latch after the paddle
+    // branch. At the lower corners this lets the wall reflection win when
+    // both objects latched on the same raster frame.
+    if lane.collision_latches & 4 != 0 {
+        let x = lane.ball_x / FP;
+        if (x <= 8 && lane.ball_vx < 0) || (x >= 150 && lane.ball_vx > 0) {
+            lane.ball_vx = -lane.ball_vx;
+            lane.last_collision |= COLLISION_WALL;
+        }
     }
 
     lane.ball_x += lane.ball_vx;
@@ -410,10 +451,14 @@ fn update_paddle(lane: &mut Lane, action: u8) {
 }
 
 fn brick_at_ball(lane: &Lane) -> usize {
-    let x = lane.ball_x / FP;
     let y = lane.ball_y / FP;
-    let col = ((x - 8).max(0) / 8).min(17) as usize;
     let row = ((y - 59).max(0) / 6).min(5) as usize;
+    // The breakthrough kernel's red-row decoder is one raster pixel left of
+    // the stored sprite coordinate. Lower rows and ordinary-speed contacts
+    // decode the stored coordinate directly. This is visible at exact 8-pixel
+    // column boundaries.
+    let x = lane.ball_x / FP - i32::from(lane.breakthrough && row == 0);
+    let col = ((x - 8).max(0) / 8).min(17) as usize;
     row * BRICK_COLS + col
 }
 
@@ -441,6 +486,10 @@ fn visible_bricks(lane: &Lane) -> u128 {
 }
 
 fn apply_atari_speed(lane: &mut Lane) {
+    if lane.breakthrough {
+        apply_breakthrough_speed(lane);
+        return;
+    }
     let group = (lane.collision_count / 4).min(3);
     let (x, y) = match (group, lane.steep_angle) {
         (0, false) => (3 * FP / 2, FP),
@@ -454,6 +503,15 @@ fn apply_atari_speed(lane: &mut Lane) {
     lane.ball_vy = if lane.ball_vy < 0 { -y } else { y };
 }
 
+fn apply_breakthrough_speed(lane: &mut Lane) {
+    lane.ball_vx = if lane.ball_vx < 0 { -2 * FP } else { 2 * FP };
+    lane.ball_vy = if lane.ball_vy < 0 {
+        -BREAKTHROUGH_VY
+    } else {
+        BREAKTHROUGH_VY
+    };
+}
+
 fn raster_collision_latches(lane: &Lane) -> u8 {
     let x = lane.ball_x / FP;
     let y = lane.ball_y / FP;
@@ -463,21 +521,42 @@ fn raster_collision_latches(lane: &Lane) -> u8 {
     }
     if y <= 33 {
         result |= 1;
-    } else {
+    } else if x < 152 && x + 1 >= 8 {
         for row in 0..BRICK_ROWS {
             let top = 57 + row as i32 * 6;
             let bottom = top + 5;
-            if y + 3 >= top - 1 && y <= bottom + 1 {
-                let col = ((x - 8).max(0) / 8).min(17) as usize;
-                if visible_bricks(lane) & (1u128 << (row * BRICK_COLS + col)) != 0 {
-                    result |= 1;
+            // The breakthrough kernel draws the ball one scanline above its
+            // stored Y coordinate and its collision latch follows those four
+            // raster lines. The ordinary kernel has the ROM's wider edge
+            // tolerance used by the slower ball modes.
+            let vertical_overlap = if lane.breakthrough || row == 0 {
+                y + 2 >= top && y - 1 <= bottom
+            } else {
+                y + 3 >= top - 1 && y <= bottom + 1
+            };
+            if vertical_overlap {
+                // The TIA latches a playfield collision when either pixel of
+                // the two-pixel ball overlaps a brick. The ROM subsequently
+                // chooses the brick from the ball origin, so a ball straddling
+                // two columns can latch against the neighbor and remove the
+                // origin cell on the following frame.
+                let first_col = ((x - 8).max(0) / 8).min(17) as usize;
+                let last_col = ((x + 1 - 8).max(0) / 8).min(17) as usize;
+                for col in first_col..=last_col {
+                    if visible_bricks(lane) & (1u128 << (row * BRICK_COLS + col)) != 0 {
+                        result |= 1;
+                        break;
+                    }
+                }
+                if result & 1 != 0 {
                     break;
                 }
             }
         }
     }
     let paddle_x = lane.paddle_x / FP;
-    if y + 3 >= 189 && y <= 192 && x + 1 >= paddle_x && x <= paddle_x + 15 {
+    let paddle_right = paddle_x + if lane.narrow_paddle { 11 } else { 15 };
+    if y + 3 >= 189 && y <= 192 && x + 1 >= paddle_x && x <= paddle_right {
         result |= 2;
     }
     result
@@ -548,8 +627,9 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
     }
 
     let paddle_x = (lane.paddle_x / FP).clamp(8, 144) as usize;
+    let paddle_width = if lane.narrow_paddle { 12 } else { 16 };
     for y in 189..193 {
-        frame[y * RENDER_W + paddle_x..y * RENDER_W + paddle_x + 16].fill(2);
+        frame[y * RENDER_W + paddle_x..y * RENDER_W + paddle_x + paddle_width].fill(2);
     }
 
     if !lane.awaiting_fire {
@@ -559,7 +639,16 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
             let visible_x0 = ball_x.max(8);
             let visible_x1 = (ball_x + 2).min(152);
             if visible_x0 < visible_x1 {
-                for y in ball_y..(ball_y + 4).min(196) {
+                // Above the bricks the ROM reuses the neutral playfield color
+                // for the ball and starts it one scanline early. Below the top
+                // row the ordinary brick-band kernel remains.
+                let playfield_colored_above_bricks = ball_y < 57;
+                let ordinary_y0 = if playfield_colored_above_bricks {
+                    ball_y.saturating_sub(1)
+                } else {
+                    ball_y
+                };
+                for y in ordinary_y0..(ordinary_y0 + 4).min(196) {
                     if (57..93).contains(&y) {
                         continue;
                     }
@@ -571,16 +660,20 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
                     for x in visible_x0..scanline_x1 {
                         let pixel = &mut frame[y * RENDER_W + x];
                         if *pixel == 0 {
-                            *pixel = 2;
+                            *pixel = if playfield_colored_above_bricks && y < 57 {
+                                1
+                            } else {
+                                2
+                            };
                         }
                     }
                 }
                 let band_y0 = ball_y.saturating_sub(1);
                 for y in band_y0..(band_y0 + 4).min(93) {
-                    if y < 57 {
+                    if y < 56 {
                         continue;
                     }
-                    let ball_color = 2 + ((y - 57) / 6) as u8;
+                    let ball_color = if y == 56 { 1 } else { 2 + ((y - 57) / 6) as u8 };
                     for x in visible_x0..visible_x1 {
                         let pixel = &mut frame[y * RENDER_W + x];
                         if *pixel == 0 {
@@ -778,7 +871,7 @@ fn take_u16(src: &[u8], offset: &mut usize) -> Result<u16, &'static str> {
 
 fn serialize_lane(lane: &Lane) -> Vec<u8> {
     let mut out = Vec::with_capacity(64 + lane.stack.len());
-    out.extend_from_slice(b"BTO7");
+    out.extend_from_slice(b"BTO9");
     for value in [
         lane.paddle_x,
         lane.ball_x,
@@ -802,6 +895,8 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
     out.push(lane.collision_latches);
     out.push(lane.collision_count);
     out.push(lane.steep_angle as u8);
+    out.push(lane.breakthrough as u8);
+    out.push(lane.narrow_paddle as u8);
     out.push(lane.brick_contact as u8);
     put_u16(&mut out, lane.paddle_charge);
     out.push(lane.paddle_repeat);
@@ -812,7 +907,7 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
 }
 
 fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static str> {
-    if data.get(0..4) != Some(b"BTO7") {
+    if data.get(0..4) != Some(b"BTO9") {
         return Err("state has an invalid header");
     }
     let mut offset = 4;
@@ -839,6 +934,10 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     let collision_count = *data.get(offset).ok_or("state is truncated")?;
     offset += 1;
     let steep_angle = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let breakthrough = *data.get(offset).ok_or("state is truncated")? != 0;
+    offset += 1;
+    let narrow_paddle = *data.get(offset).ok_or("state is truncated")? != 0;
     offset += 1;
     let brick_contact = *data.get(offset).ok_or("state is truncated")? != 0;
     offset += 1;
@@ -872,6 +971,8 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
         collision_latches,
         collision_count,
         steep_angle,
+        breakthrough,
+        narrow_paddle,
         brick_contact,
         paddle_charge,
         paddle_repeat,
@@ -1295,6 +1396,8 @@ impl NativeBreakoutVecEnv {
         target.last_collision = 0;
         target.awaiting_fire = false;
         target.collision_latches = 0;
+        target.breakthrough = false;
+        target.narrow_paddle = false;
         target.brick_contact = false;
         render_and_push(target, &self.preprocess, self.frame_stack);
         let source_slot = (target.stack_head + self.frame_stack - 1) % self.frame_stack;
@@ -1364,4 +1467,186 @@ fn _breakout_turbo(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("RENDER_HEIGHT", RENDER_H)?;
     module.add("FIXED_POINT_ONE", FP)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+
+    fn active_lane() -> Lane {
+        let mut lane = Lane::new(0);
+        lane.awaiting_fire = false;
+        lane.tick = 36;
+        lane
+    }
+
+    #[test]
+    fn ball_above_bricks_uses_gray_shifted_kernel() {
+        let mut lane = active_lane();
+        lane.ball_x = 40 * FP;
+        lane.ball_y = 50 * FP;
+        let frame = render_indexed(&lane);
+
+        for y in 49..53 {
+            assert_eq!(&frame[y * RENDER_W + 40..y * RENDER_W + 42], &[1, 1]);
+        }
+        assert_eq!(&frame[53 * RENDER_W + 40..53 * RENDER_W + 42], &[0, 0]);
+    }
+
+    #[test]
+    fn ceiling_contact_selects_twelve_pixel_paddle_until_life_loss() {
+        let mut lane = active_lane();
+        lane.paddle_x = 71 * FP;
+        lane.paddle_measure = 117;
+        lane.paddle_charge = charge_for_paddle_measurement(117);
+        lane.ball_y = 31 * FP;
+        lane.ball_vy = -FP;
+        lane.collision_latches = 1;
+
+        step_native(&mut lane, 0);
+        assert!(lane.narrow_paddle);
+        assert!(lane.ball_vy > 0);
+        let frame = render_indexed(&lane);
+        assert!(
+            frame[190 * RENDER_W + 71..190 * RENDER_W + 83]
+                .iter()
+                .all(|&pixel| pixel == 2)
+        );
+        assert_eq!(frame[190 * RENDER_W + 83], 0);
+
+        lane.ball_y = 217 * FP;
+        step_native(&mut lane, 0);
+        assert!(!lane.narrow_paddle);
+    }
+
+    #[test]
+    fn red_row_contact_enables_exact_breakthrough_speed() {
+        let mut lane = active_lane();
+        lane.ball_x = 80 * FP;
+        lane.ball_y = 59 * FP;
+        lane.ball_vx = -FP;
+        lane.ball_vy = FP;
+        lane.collision_latches = 1;
+
+        let (reward, done) = step_native(&mut lane, 0);
+        assert_eq!(reward, 7.0);
+        assert!(!done);
+        assert!(lane.breakthrough);
+        assert_eq!(lane.ball_vx, -2 * FP);
+        assert_eq!(lane.ball_vy, -BREAKTHROUGH_VY);
+    }
+
+    #[test]
+    fn top_row_latch_follows_shifted_raster_lines() {
+        let mut lane = active_lane();
+        lane.ball_x = 80 * FP;
+        lane.ball_y = 54 * FP;
+        assert_eq!(raster_collision_latches(&lane) & 1, 0);
+
+        lane.ball_y = 56 * FP;
+        assert_eq!(raster_collision_latches(&lane) & 1, 1);
+    }
+
+    #[test]
+    fn breakthrough_red_row_decoder_has_one_pixel_left_offset() {
+        let mut lane = active_lane();
+        lane.breakthrough = true;
+        lane.ball_x = 16 * FP;
+        lane.ball_y = 59 * FP;
+        assert_eq!(brick_at_ball(&lane), 0);
+
+        lane.ball_y = 68 * FP;
+        assert_eq!(brick_at_ball(&lane), BRICK_COLS + 1);
+    }
+
+    #[test]
+    fn raster_latches_neighbor_pixel_but_rom_decodes_ball_origin() {
+        let mut lane = active_lane();
+        lane.bricks = 1u128 << (3 * BRICK_COLS + 14);
+        lane.ball_x = 119 * FP;
+        lane.ball_y = 80 * FP;
+        assert_eq!(raster_collision_latches(&lane) & 1, 1);
+
+        lane.collision_latches = 1;
+        let (reward, _) = step_native(&mut lane, 0);
+        assert_eq!(reward, 0.0);
+        assert_eq!(lane.bricks.count_ones(), 1);
+    }
+
+    fn paddle_return(narrow: bool, paddle_x: i32, ball_x: i32, incoming_vx: i32) -> Lane {
+        let mut lane = active_lane();
+        lane.narrow_paddle = narrow;
+        lane.breakthrough = true;
+        lane.paddle_x = paddle_x;
+        lane.ball_x = ball_x;
+        lane.ball_y = 187 * FP;
+        lane.ball_vx = incoming_vx;
+        lane.ball_vy = BREAKTHROUGH_VY;
+        lane.collision_latches = 2;
+        step_native(&mut lane, 0);
+        lane
+    }
+
+    #[test]
+    fn paddle_crossing_branches_preserve_atari_fixed_point_asymmetry() {
+        let narrow_center = paddle_return(true, 75 * FP, 80 * FP, -2 * FP);
+        assert_eq!(
+            (narrow_center.ball_x, narrow_center.ball_vx),
+            (82 * FP, 2 * FP)
+        );
+
+        let narrow_crossing = paddle_return(true, 56 * FP, 60 * FP + FP / 2, -2 * FP);
+        assert_eq!(
+            (narrow_crossing.ball_x, narrow_crossing.ball_vx),
+            (62 * FP + FP / 2, -2 * FP)
+        );
+
+        let wide_crossing = paddle_return(false, 49 * FP, 55 * FP + FP / 2, -2 * FP);
+        assert_eq!(
+            (wide_crossing.ball_x, wide_crossing.ball_vx),
+            (57 * FP + FP / 2, -2 * FP)
+        );
+
+        let wide_positive_half = paddle_return(false, 90 * FP, 95 * FP + FP / 2, -2 * FP);
+        assert_eq!(
+            (wide_positive_half.ball_x, wide_positive_half.ball_vx),
+            (93 * FP + FP / 2, -2 * FP)
+        );
+    }
+
+    #[test]
+    fn life_loss_and_serve_preserve_position_fractions() {
+        let mut lane = active_lane();
+        lane.ball_x = 40 * FP + 12_345;
+        lane.ball_y = 217 * FP + 23_456;
+        lane.ball_vx = FP;
+        lane.ball_vy = FP;
+        lane.breakthrough = true;
+        lane.narrow_paddle = true;
+
+        step_native(&mut lane, 0);
+        assert_eq!(lane.ball_y, 9 * FP + 23_456);
+        assert_eq!((lane.ball_vx, lane.ball_vy), (0, 0));
+        assert!(!lane.breakthrough);
+        assert!(!lane.narrow_paddle);
+
+        step_native(&mut lane, 1);
+        assert_eq!(lane.ball_x.rem_euclid(FP), 12_345);
+        assert_eq!(lane.ball_y, 122 * FP + 23_456);
+    }
+
+    #[test]
+    fn snapshot_round_trip_keeps_new_cartridge_modes() {
+        let mut lane = active_lane();
+        lane.breakthrough = true;
+        lane.narrow_paddle = true;
+        lane.stack = vec![1, 2, 3];
+        let encoded = serialize_lane(&lane);
+        assert_eq!(&encoded[..4], b"BTO9");
+
+        let decoded = deserialize_lane(&encoded, 3).unwrap();
+        assert!(decoded.breakthrough);
+        assert!(decoded.narrow_paddle);
+        assert_eq!(decoded.stack, vec![1, 2, 3]);
+    }
 }
