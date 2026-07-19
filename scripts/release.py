@@ -98,6 +98,7 @@ def run_checks(skip_checks: bool) -> None:
     run(["cargo", "fmt", "--check"])
     run(["cargo", "check", "--release"])
     run([str(PYTHON), "-m", "maturin", "develop", "--release"], env=env)
+    env["BREAKOUT_REQUIRE_STABLE_RETRO"] = "1"
     run(["make", "test", "PYTHON=.venv/bin/python"], env=env)
 
 

@@ -80,7 +80,7 @@ For player, benchmark, training, and replay options, append `--help` to the corr
 - The Stable Retro differential suite requires a sibling `stable-retro-turbo` checkout with the locally installed Breakout ROM. Regular pytest runs it automatically when those prerequisites are available and otherwise reports it as skipped; `make test-stable-retro` requires the reference and fails if it is unavailable. The suite discovers coordinates from live RAM/rendered motion, then compares native RGB frames, rewards, score, lives, and terminal flags under forced corners plus generated tracking, predictive, and seeded-random action streams. It contains no recorded reference trace, and the ROM is never copied into or distributed with this package.
 - PyPI provides wheels for macOS 11+ on Apple silicon and glibc 2.28+ Linux on x86-64. Other platforms require a source build.
 - Training outputs live in `runs/<algorithm>/<timestamp>/`. JERK policies use `policy.json`; PPO policies use `policy.npz`.
-- `make release` requires a clean branch synchronized with its upstream. The release workflow builds and audits macOS arm64 and Linux x86_64 wheels before publishing to PyPI.
+- `make release` requires a clean branch synchronized with its upstream and a usable local Stable Retro cartridge reference; its local checks fail rather than skip live parity. The release workflow builds and audits macOS arm64 and Linux x86_64 wheels before publishing to PyPI.
 
 ## Architecture
 
