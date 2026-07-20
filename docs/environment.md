@@ -48,8 +48,9 @@ interface.
 - The default policy observation has shape `(num_envs, 4, 84, 84)`, CHW layout,
   grayscale `uint8` values, four stacked frames, and four native frames per
   environment step.
-- `render()` returns lane zero as the native 160×210 RGB frame. Rendering is
-  separate from policy observations.
+- `render()` returns lane zero as the native 160×210 RGB frame;
+  `render_lane(index)` selects any lane. Rendering never advances the game and
+  remains separate from policy observations.
 - Rewards are score deltas. Brick rows score `7, 7, 4, 4, 1, 1` from top to
   bottom. There is no life-loss penalty or board-clear reward.
 - Clearing the wall does not end the episode. Termination follows the five-life

@@ -6,6 +6,11 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added `render_lane(index)` for inspecting any vector-environment lane without
+  advancing game state; `render()` remains the lane-zero Gymnasium interface.
+
 ## [0.3.4] - 2026-07-20
 
 ### Changed

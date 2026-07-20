@@ -449,6 +449,42 @@ def test_render_matches_atari_2600_geometry_and_palette():
     np.testing.assert_array_equal(frame[189:195, 152:], np.broadcast_to(red, (6, 8, 3)))
 
 
+def test_render_lane_selects_any_lane_without_mutating_state():
+    env = make_env(frame_skip=1)
+    try:
+        env.reset(options={"start_indices": np.arange(4, dtype=np.int32)})
+        before = env.get_state()
+
+        lane_zero = env.render_lane(0)
+        lane_one = env.render_lane(np.int64(1))
+
+        np.testing.assert_array_equal(env.render(), lane_zero)
+        assert lane_one.shape == (RENDER_HEIGHT, RENDER_WIDTH, 3)
+        assert lane_one.dtype == np.uint8
+        assert not np.array_equal(lane_one, lane_zero)
+        assert env.get_state() == before
+    finally:
+        env.close()
+
+
+def test_render_lane_rejects_invalid_indices_and_closed_environment():
+    env = make_env(frame_skip=1)
+    env.reset()
+
+    for lane in (-1, env.num_envs):
+        with pytest.raises(IndexError, match="lane must be in"):
+            env.render_lane(lane)
+    for lane in (True, 1.5, "1"):
+        with pytest.raises(TypeError, match="lane must be an integer"):
+            env.render_lane(lane)
+
+    env.close()
+    with pytest.raises(RuntimeError, match="closed environment"):
+        env.render_lane(0)
+    with pytest.raises(RuntimeError, match="closed environment"):
+        env.render()
+
+
 def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
     env = make_env(frame_skip=1)
     env.reset()

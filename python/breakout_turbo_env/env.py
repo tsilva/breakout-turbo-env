@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -684,11 +685,29 @@ class BreakoutVecEnv(VectorEnv):
             "actions": np.tile(action_values, len(states)),
         }
 
-    def render(self):
-        indexed = np.frombuffer(self.native.render_indexed(0), dtype=np.uint8).reshape(
+    def render_lane(self, lane: int) -> np.ndarray:
+        """Return one lane's native 160x210 RGB frame without advancing it."""
+        if self._closed:
+            raise RuntimeError("cannot render a closed environment")
+        if isinstance(lane, (bool, np.bool_)):
+            raise TypeError("lane must be an integer")
+        try:
+            lane_index = operator.index(lane)
+        except TypeError:
+            raise TypeError("lane must be an integer") from None
+        if not 0 <= lane_index < self.num_envs:
+            raise IndexError(
+                f"lane must be in [0, {self.num_envs - 1}], got {lane_index}"
+            )
+        indexed = np.frombuffer(
+            self.native.render_indexed(lane_index), dtype=np.uint8
+        ).reshape(
             RENDER_HEIGHT, RENDER_WIDTH
         )
         return _ATARI_2600_NTSC_PALETTE[indexed]
+
+    def render(self):
+        return self.render_lane(0)
 
     def close(self):
         self._closed = True
