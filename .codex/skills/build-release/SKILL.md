@@ -6,7 +6,7 @@ description: Prepare, build, approve, publish, and verify a breakout-turbo-env r
 # Build Release
 
 Use only the repository-owned release state machine. A release has four
-reviewable transitions: release PR, controlled parity receipt, attested
+reviewable transitions: prepared release commit, controlled parity receipt, attested
 candidate, and approved publication. Never create or push a release tag by
 hand, never manually upload to PyPI, and never substitute a different workflow
 artifact after candidate validation.
@@ -16,8 +16,8 @@ artifact after candidate validation.
 Before beginning, verify all of these controls rather than assuming them:
 
 - the legacy tag-triggered `Release` workflow remains disabled;
-- `main` protection and the `pypi` environment match
-  `docs/release-validation.md`;
+- the unprotected direct-push `main` workflow and the protected `pypi`
+  environment match `docs/release-validation.md`;
 - the `breakout-parity` runner and `PARITY_STABLE_RETRO_REPO` variable exist;
 - `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are `pypi` environment secrets
   for a repository-only GitHub App with metadata-read and contents-write access,
@@ -30,7 +30,7 @@ Before beginning, verify all of these controls rather than assuming them:
 If any precondition is absent, stop before publication and report it. Do not
 weaken a gate to make progress.
 
-## 1. Prepare the release PR
+## 1. Prepare the release commit
 
 From a clean branch synchronized with its upstream:
 
@@ -42,11 +42,12 @@ scripts/release.py prepare
 Use `prepare --to <version>` or `prepare --part minor|major|patch` only when the
 user explicitly chose that target. The command may modify only changelog and
 version metadata. It never commits, tags, pushes, resolves dependencies, or
-publishes. Review the diff and use the normal protected pull-request path.
+publishes. Review the diff, commit it directly on `main`, and push only after
+the local checks pass.
 
 ## 2. Run controlled parity
 
-After the release PR is merged, capture the exact `main` SHA and the controlled
+After the release commit is pushed, capture the exact `main` SHA and the controlled
 reference checkout SHA. Dispatch `.github/workflows/parity.yml` with the SHA,
 version, and reference SHA. Monitor the run to completion. The resulting
 artifact must be named `parity-receipt-<40-character-sha>` and must contain only
@@ -63,7 +64,8 @@ successful parity run id. The workflow requires the SHA to remain current
 Monitor it to completion and record its run id.
 
 Do not rebuild a single artifact locally. If a build or audit fails, fix the
-cause through a new PR, rerun parity for the new SHA, and build a new candidate.
+cause in a new direct `main` commit, rerun parity for the new SHA, and build a
+new candidate.
 
 ## 4. Approve and publish
 

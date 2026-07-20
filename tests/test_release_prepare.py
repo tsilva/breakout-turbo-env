@@ -38,6 +38,9 @@ def test_release_script_has_no_commit_tag_push_or_skip_authority():
     ):
         assert forbidden not in source
 
+    assert "Review and commit these files directly on main" in source
+    assert "pull request" not in source
+
 
 def test_dependency_snapshot_ignores_only_first_party_version():
     release = release_module()

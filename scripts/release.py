@@ -189,7 +189,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    prepare = commands.add_parser("prepare", help="prepare a release PR diff")
+    prepare = commands.add_parser("prepare", help="prepare a release commit diff")
     group = prepare.add_mutually_exclusive_group()
     group.add_argument("--to", help="Exact release version, for example 0.3.6")
     group.add_argument(
@@ -219,7 +219,7 @@ def prepare(args: argparse.Namespace) -> None:
 
     print()
     print(f"Prepared v{version} from {upstream}; no commit, tag, push, or publish occurred.")
-    print("Review and commit these files in a pull request:")
+    print("Review and commit these files directly on main:")
     for path in changed:
         print(f"  {path}")
     print()

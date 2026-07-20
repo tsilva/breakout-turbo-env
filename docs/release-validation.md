@@ -21,9 +21,9 @@ The state machine rejects a reused version unless PyPI already contains the
 complete, byte-identical candidate. This permits safe recovery after a
 post-upload interruption without enabling replacement or partial releases.
 
-## Prepare a release pull request
+## Prepare a release commit
 
-Use the repository command from a clean branch synchronized with its upstream:
+Use the repository command from clean, synchronized `main`:
 
 ```bash
 uv sync --locked --extra dev
@@ -32,7 +32,7 @@ scripts/release.py prepare
 
 The command promotes human-authored changelog notes and updates only the
 version metadata files. It does not commit, tag, push, regenerate dependency
-graphs, or publish. Dependency changes belong in a separate pull request.
+graphs, or publish. Dependency changes belong in a separate commit.
 
 Local and CI checks use the committed locks and pinned Rust toolchain:
 
@@ -79,10 +79,11 @@ does not extend the supported platform set.
 
 ## Repository controls
 
-`main` requires pull requests, an up-to-date branch, all Python/Rust/package
-checks, both CodeQL analyses, linear history, and resolved conversations.
-Administrators cannot bypass it. The `pypi` environment has a wait timer and
-required approval and also disallows administrator bypass.
+`main` intentionally permits direct maintainer pushes and does not require pull
+requests or status checks. CI, package tests, dependency review, and CodeQL
+still run as detection and feedback. Release publication remains separate: the
+`pypi` environment accepts only the `main` branch, has a wait timer and required
+approval, and disallows administrator bypass.
 
 Before the first publication through the new flow, install a dedicated GitHub
 App on this repository with metadata-read and contents-write access only. Store
