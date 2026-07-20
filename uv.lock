@@ -11,7 +11,7 @@ exclude-newer = "2026-07-12T00:00:00Z"
 
 [options.exclude-newer-package]
 supermariobrosnes-turbo = "2026-07-17T15:00:00Z"
-breakout-turbo-env = "2026-07-15T10:58:00Z"
+breakout-turbo-env = "2026-07-19T16:13:00Z"
 stable-retro-turbo = "2026-07-17T19:52:14Z"
 
 [manifest]
@@ -49,7 +49,7 @@ wheels = [
 
 [[package]]
 name = "breakout-turbo-env"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "gymnasium" },
