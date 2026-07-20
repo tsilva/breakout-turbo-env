@@ -24,6 +24,13 @@ env = BreakoutVecEnv(
 )
 ```
 
+For the exact four-command policy space, pass `use_restricted_actions="simple"`.
+The preset is loaded from the packaged
+`data/Breakout-Atari2600-v0/metadata.json` and maps to no-op, FIRE, right, and
+left. Inline subsets and reorderings use the same console button labels, for
+example `[["LEFT"], [], ["RIGHT"]]`. Combinations the native kernel cannot
+reproduce are rejected.
+
 Importing the package registers the Stable Retro-compatible environment id:
 
 ```python

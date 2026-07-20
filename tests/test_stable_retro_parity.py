@@ -7,8 +7,10 @@ comparing the resulting native frame and transition values.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from importlib import resources
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +34,17 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(STABLE_REPO))
 
 pytestmark = pytest.mark.stable_retro
+
+
+def test_packaged_action_tables_match_stable_retro_integration_metadata():
+    stable_metadata = json.loads((DATA_DIR / "metadata.json").read_text(encoding="utf-8"))
+    turbo_metadata = json.loads(
+        resources.files("breakout_turbo_env")
+        .joinpath("data", "Breakout-Atari2600-v0", "metadata.json")
+        .read_text(encoding="utf-8")
+    )
+
+    assert turbo_metadata["action_sets"] == stable_metadata["action_sets"]
 
 
 def _missing_reference_reason() -> str | None:

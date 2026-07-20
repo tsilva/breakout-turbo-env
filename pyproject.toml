@@ -66,6 +66,7 @@ dev = [
 module-name = "breakout_turbo_env._breakout_turbo"
 python-source = "python"
 features = ["pyo3/extension-module"]
+include = ["python/breakout_turbo_env/data/**/metadata.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

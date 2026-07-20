@@ -8,6 +8,9 @@ releases; changes will be recorded here.
 
 ### Added
 
+- Added game-owned preset and inline exact action tables under
+  `use_restricted_actions`, loaded from packaged `metadata.json` with
+  validated Atari controller labels and deterministic semantic hashes.
 - Added an optional Stable-Baselines3 adapter and example that preserves
   terminal observations while resetting only completed lanes.
 - Added CodeQL coverage for Python, Rust, and GitHub Actions, plus SPDX SBOM

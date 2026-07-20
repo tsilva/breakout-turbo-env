@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .action_tables import ACTION_SETS, ACTION_TABLES, BUTTONS, ActionTable
 from .env import (
     FIXED_POINT_ONE,
     RAW_HEIGHT,
@@ -11,6 +12,10 @@ from .env import (
 
 __all__ = [
     "BreakoutVecEnv",
+    "ACTION_SETS",
+    "ACTION_TABLES",
+    "ActionTable",
+    "BUTTONS",
     "FIXED_POINT_ONE",
     "RAW_HEIGHT",
     "RAW_WIDTH",

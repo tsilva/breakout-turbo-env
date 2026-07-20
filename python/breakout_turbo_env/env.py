@@ -16,6 +16,7 @@ from ._breakout_turbo import (
     RENDER_WIDTH,
     NativeBreakoutVecEnv,
 )
+from .action_tables import ACTION_TABLES, BUTTONS, ActionTable, resolve_custom_action
 
 _SIGNAL_NAMES = (
     "paddle_x",
@@ -43,6 +44,12 @@ _LEGACY_GAME = "BreakoutTurbo-v0"
 _START_IDS = ("Start", "checker", "tunnel", "sparse")
 _START_ALIASES = {"full": "Start"}
 _RETRO_BUTTON_COUNT = 8
+_NATIVE_ACTION_BY_MASK = {
+    0: 0,
+    1 << BUTTONS.index("BUTTON"): 1,
+    1 << BUTTONS.index("RIGHT"): 2,
+    1 << BUTTONS.index("LEFT"): 3,
+}
 _ATARI_2600_NTSC_PALETTE = np.array(
     [
         [0, 0, 0],
@@ -78,14 +85,29 @@ def _canonical_start_id(value: Any) -> str:
     return _START_ALIASES.get(text, text)
 
 
-def _uses_retro_actions(value: Any) -> bool:
-    if value is None or _enum_name(value) in {"none", "native"}:
-        return False
-    if _enum_name(value) == "filtered" or value == 1:
-        return True
-    raise ValueError(
-        "use_restricted_actions must be 'filtered' or omitted for native actions"
-    )
+def _resolve_actions(value: Any):
+    name = _enum_name(value)
+    if value is None or name in {"none", "native"}:
+        custom = resolve_custom_action("simple", tables=ACTION_TABLES)
+        return "native", None, custom
+    if name == "filtered" or value == 1:
+        return "filtered", None, None
+    if name in {"all", "discrete", "multi_discrete"} or (
+        isinstance(value, int) and value in {0, 2, 3}
+    ):
+        raise ValueError(f"BreakoutVecEnv does not support built-in action mode {name!r}")
+    custom = resolve_custom_action(value, tables=ACTION_TABLES)
+    unsupported = [
+        labels
+        for labels, masks in zip(custom.table, custom.masks, strict=True)
+        if masks[0] not in _NATIVE_ACTION_BY_MASK
+    ]
+    if unsupported:
+        raise ValueError(
+            "BreakoutVecEnv cannot reproduce action combination(s): "
+            + ", ".join(repr(value) for value in unsupported)
+        )
+    return "custom_discrete", custom.preset, custom
 
 
 def _require_fixed_option(name: str, value: Any, expected: Any) -> None:
@@ -150,7 +172,7 @@ class BreakoutVecEnv(VectorEnv):
         state: str | None = None,
         scenario: str | None = None,
         info: str | None = None,
-        use_restricted_actions: Any = None,
+        use_restricted_actions: Any | str | ActionTable = None,
         record: bool = False,
         players: int = 1,
         inttype: Any = "stable",
@@ -183,7 +205,28 @@ class BreakoutVecEnv(VectorEnv):
             names = ", ".join(sorted(unsupported))
             raise TypeError(f"unsupported option(s): {names}")
         self.game = _normalize_game(game)
-        self._retro_actions = _uses_retro_actions(use_restricted_actions)
+        action_mode, action_preset, custom_actions = _resolve_actions(
+            use_restricted_actions
+        )
+        self.action_mode = action_mode
+        self.action_preset = action_preset
+        self.action_table = None if custom_actions is None else custom_actions.table
+        self.action_meanings = (
+            None if custom_actions is None else custom_actions.meanings
+        )
+        self.action_table_hash = (
+            None if custom_actions is None else custom_actions.table_hash
+        )
+        self.use_restricted_actions = use_restricted_actions
+        self._retro_actions = action_mode == "filtered"
+        self._custom_native_actions = (
+            None
+            if custom_actions is None
+            else np.asarray(
+                [_NATIVE_ACTION_BY_MASK[masks[0]] for masks in custom_actions.masks],
+                dtype=np.uint8,
+            )
+        )
         _validate_retro_compatibility_options(
             state=state,
             scenario=scenario,
@@ -288,7 +331,7 @@ class BreakoutVecEnv(VectorEnv):
         self.render_mode = render_mode
         self.state_catalog = configured_catalog
         self.initial_state_names = configured_catalog
-        if self._retro_actions:
+        if action_mode == "filtered":
             self.single_action_space = gym.spaces.MultiBinary(_RETRO_BUTTON_COUNT)
             self.action_space = gym.spaces.Box(
                 0,
@@ -297,9 +340,10 @@ class BreakoutVecEnv(VectorEnv):
                 dtype=np.int8,
             )
         else:
-            self.single_action_space = gym.spaces.Discrete(4)
+            action_count = len(self.action_table)
+            self.single_action_space = gym.spaces.Discrete(action_count)
             self.action_space = gym.spaces.MultiDiscrete(
-                np.full(num_envs, 4, dtype=np.int64)
+                np.full(num_envs, action_count, dtype=np.int64)
             )
         self.single_observation_space = gym.spaces.Box(
             0, 255, shape=(frame_stack, obs_h, obs_w), dtype=np.uint8
@@ -559,8 +603,18 @@ class BreakoutVecEnv(VectorEnv):
         )
 
     def _native_actions(self, actions: Any) -> np.ndarray:
-        if not self._retro_actions:
-            return np.asarray(actions, dtype=np.uint8)
+        if self.action_mode != "filtered":
+            values = np.asarray(actions, dtype=np.int64).reshape(-1)
+            if values.shape != (self.num_envs,):
+                raise ValueError(f"actions must have shape ({self.num_envs},)")
+            if values.size and (
+                int(values.min()) < 0 or int(values.max()) >= len(self.action_table)
+            ):
+                raise ValueError(
+                    f"actions must be in [0, {len(self.action_table) - 1}] "
+                    f"for action_preset={self.action_preset!r}"
+                )
+            return self._custom_native_actions[values]
         buttons = np.asarray(actions, dtype=np.int8)
         expected_shape = (self.num_envs, _RETRO_BUTTON_COUNT)
         if buttons.shape != expected_shape:
