@@ -1,0 +1,188 @@
+name: Publish approved release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: "Successful Release candidate workflow run id"
+        required: true
+        type: string
+      version:
+        description: "Exact candidate version"
+        required: true
+        type: string
+      commit:
+        description: "Exact candidate commit SHA"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-v${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify, publish, tag, and release
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/breakout-turbo-env
+    steps:
+      - name: Validate immutable inputs
+        shell: bash
+        run: |
+          [[ "${{ inputs.commit }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${{ inputs.candidate_run_id }}" =~ ^[0-9]+$ ]]
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.commit }}
+
+      - name: Require candidate is current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse HEAD)" = "${{ inputs.commit }}"
+          test "$(git rev-parse origin/main)" = "${{ inputs.commit }}"
+          test "$(tr -d '[:space:]' < VERSION.txt)" = "${{ inputs.version }}"
+
+      - name: Validate candidate workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.candidate_run_id }}")"
+          test "$(jq -r .conclusion <<< "$run")" = success
+          test "$(jq -r .event <<< "$run")" = workflow_dispatch
+          test "$(jq -r .path <<< "$run")" = .github/workflows/release-build.yml
+
+      - name: Download exact candidate bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-v${{ inputs.version }}
+          path: candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.13"
+
+      - name: Install locked release environment
+        run: uv sync --locked --extra dev
+
+      - name: Verify candidate state and artifact attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python scripts/release_state.py verify \
+            --candidate candidate \
+            --version "${{ inputs.version }}" \
+            --commit "${{ inputs.commit }}" \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ inputs.candidate_run_id }}" > /dev/null
+          for distribution in candidate/dist/*; do
+            gh attestation verify "$distribution" --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: Determine idempotent PyPI transition
+        id: pypi
+        run: |
+          .venv/bin/python scripts/release_state.py pypi-status \
+            --candidate candidate \
+            --version "${{ inputs.version }}" \
+            --commit "${{ inputs.commit }}" \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ inputs.candidate_run_id }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Mint release GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.1.1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: breakout-turbo-env
+
+      - name: Publish exact candidate to PyPI
+        if: steps.pypi.outputs.publish_needed == 'true'
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+        with:
+          packages-dir: candidate/dist
+
+      - name: Verify exact PyPI file set
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in {1..30}; do
+            if .venv/bin/python scripts/release_state.py pypi-status \
+              --candidate candidate \
+              --version "${{ inputs.version }}" \
+              --commit "${{ inputs.commit }}" \
+              --repository "${{ github.repository }}" \
+              --run-id "${{ inputs.candidate_run_id }}" \
+              --require-complete; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+
+      - name: Create protected tag and release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ inputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$tag")" = "${{ inputs.commit }}"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              --method POST \
+              -f ref="refs/tags/$tag" \
+              -f sha="${{ inputs.commit }}"
+          fi
+          .venv/bin/python scripts/release_notes.py \
+            --version "${{ inputs.version }}" > release-notes.md
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir published-release
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+              --dir published-release
+            for asset in candidate/dist/* candidate/SHA256SUMS \
+              candidate/release-manifest.json candidate/parity-receipt.json \
+              candidate/sbom.spdx.json; do
+              cmp "$asset" "published-release/$(basename "$asset")"
+            done
+          else
+            gh release create "$tag" \
+              candidate/dist/* \
+              candidate/SHA256SUMS \
+              candidate/release-manifest.json \
+              candidate/parity-receipt.json \
+              candidate/sbom.spdx.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "breakout-turbo-env $tag" \
+              --notes-file release-notes.md \
+              --verify-tag
+          fi

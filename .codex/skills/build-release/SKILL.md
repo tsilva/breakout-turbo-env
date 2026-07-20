@@ -1,141 +1,95 @@
 ---
 name: build-release
-description: Launch and monitor a breakout-turbo-env PyPI release. Use when the user says /build-release or $build-release, asks to cut, tag, or publish a release, asks whether a release reached PyPI, or asks for validated macOS arm64 and Linux x86_64 breakout-turbo-env wheels.
+description: Prepare, build, approve, publish, and verify a breakout-turbo-env release through its gated candidate state machine.
 ---
 
 # Build Release
 
-Use the repository-owned release flow and monitor it until the package is
-visible on PyPI. The implementation lives in `scripts/release.py`, the
-`Makefile` `release` target, and this skill's
-`scripts/release_build.py` helper.
+Use only the repository-owned release state machine. A release has four
+reviewable transitions: release PR, controlled parity receipt, attested
+candidate, and approved publication. Never create or push a release tag by
+hand, never manually upload to PyPI, and never substitute a different workflow
+artifact after candidate validation.
 
-`make release` installs the locked release environment and runs the release
-script. The script enforces a clean tree, a configured and synchronized
-upstream, an unused PyPI version, non-empty human-authored release notes,
-synchronized versions, lock refresh, local checks, release commit and tag
-creation, and an atomic push. Unless an exact target section is already
-prepared, it promotes the checked-in `Unreleased` changelog section to the
-target version and date and creates a fresh `Unreleased` section. It commits
-`CHANGELOG.md` with the version and lock files. The pushed tag triggers
-`.github/workflows/release.yml`, which revalidates the release notes before it
-builds, audits, and publishes macOS arm64 and Linux x86_64 wheels through PyPI
-trusted publishing.
+## Preconditions
 
-For a new project, release the checked-in version when it is unused on PyPI.
-After that version exists, default to the next patch release. Do not manually
-upload to PyPI unless the user explicitly asks for recovery after the trusted
-publishing path fails. Never print or commit PyPI tokens. Work on the current
-branch unless the user explicitly requests another branch.
+Before beginning, verify all of these controls rather than assuming them:
 
-## Release flow
+- the legacy tag-triggered `Release` workflow remains disabled;
+- `main` protection and the `pypi` environment match
+  `docs/release-validation.md`;
+- the `breakout-parity` runner and `PARITY_STABLE_RETRO_REPO` variable exist;
+- `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are `pypi` environment secrets
+  for a repository-only GitHub App with metadata-read and contents-write access,
+  allowed to create `v*` tags and releases;
+- immutable GitHub Releases are enabled only after the pre-hardening evidence
+  archive is verified in object-locked storage; and
+- PyPI Trusted Publishing is restricted to
+  `.github/workflows/release-publish.yml` and the `pypi` environment.
 
-1. For the current version or default next release, run:
+If any precondition is absent, stop before publication and report it. Do not
+weaken a gate to make progress.
 
-```bash
-make release
-```
+## 1. Prepare the release PR
 
-For an explicit version or bump shape, install the locked environment and run
-exactly one command:
+From a clean branch synchronized with its upstream:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv sync --frozen --extra dev
-scripts/release.py --to <version>
+UV_CACHE_DIR=.uv-cache uv sync --locked --extra dev
+scripts/release.py prepare
 ```
+
+Use `prepare --to <version>` or `prepare --part minor|major|patch` only when the
+user explicitly chose that target. The command may modify only changelog and
+version metadata. It never commits, tags, pushes, resolves dependencies, or
+publishes. Review the diff and use the normal protected pull-request path.
+
+## 2. Run controlled parity
+
+After the release PR is merged, capture the exact `main` SHA and the controlled
+reference checkout SHA. Dispatch `.github/workflows/parity.yml` with the SHA,
+version, and reference SHA. Monitor the run to completion. The resulting
+artifact must be named `parity-receipt-<40-character-sha>` and must contain only
+`parity-receipt.json`.
+
+Do not copy a ROM, save state, frame, trace, or parity workspace into a GitHub
+artifact or log.
+
+## 3. Build the attested candidate
+
+Dispatch `.github/workflows/release-build.yml` with that exact SHA and the
+successful parity run id. The workflow requires the SHA to remain current
+`main`, checks that the PyPI version is unused, and builds the candidate.
+Monitor it to completion and record its run id.
+
+Do not rebuild a single artifact locally. If a build or audit fails, fix the
+cause through a new PR, rerun parity for the new SHA, and build a new candidate.
+
+## 4. Approve and publish
+
+Dispatch `.github/workflows/release-publish.yml` with the candidate run id,
+version, and commit SHA. Inspect the candidate manifest, parity receipt,
+checksums, SBOM, and attestation summaries before approving the `pypi`
+environment deployment. Monitor through PyPI verification, protected tag
+creation, and GitHub Release creation.
+
+The workflow may resume only when PyPI's complete file set is byte-identical to
+the candidate. A partial or conflicting version is a hard stop.
+
+## 5. Verify externally
+
+Confirm the exact wheel and source filenames at:
+
+```text
+https://pypi.org/project/breakout-turbo-env/<version>/
+```
+
+Then verify each downloaded distribution with:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv sync --frozen --extra dev
-scripts/release.py --part minor
+gh attestation verify <distribution> --repo tsilva/breakout-turbo-env
 ```
 
-```bash
-UV_CACHE_DIR=.uv-cache uv sync --frozen --extra dev
-scripts/release.py --part major
-```
-
-2. Let the script own the release gates. If it fails, report the exact failing
-stage and stop. Do not work around a dirty tree, unsynchronized upstream,
-existing PyPI version, missing or empty release notes, version mismatch, failed
-check, tag collision, or push failure. The script may only promote human-authored
-changelog prose; never synthesize release notes from commits.
-
-3. Capture the released tag and confirm it if necessary:
-
-```bash
-git describe --tags --exact-match HEAD
-```
-
-4. Monitor the tag-triggered workflow:
-
-```bash
-release_sha="$(git rev-list -n 1 v<version>)"
-gh run list --workflow release.yml --commit "$release_sha" --limit 5 \
-  --json databaseId,status,conclusion,event,headBranch,headSha,displayTitle,url
-gh run watch <run-id> --exit-status
-```
-
-If that query is empty, list recent release runs and choose the matching tag:
-
-```bash
-gh run list --workflow release.yml --limit 10 \
-  --json databaseId,status,conclusion,event,headBranch,headSha,displayTitle,url
-```
-
-Manual `workflow_dispatch` runs build and audit but never publish.
-
-5. After success, poll PyPI:
-
-```bash
-.venv/bin/python - <<'PY'
-import json
-import time
-import urllib.request
-
-package = "breakout-turbo-env"
-version = "<version>"
-url = f"https://pypi.org/pypi/{package}/json"
-
-for attempt in range(30):
-    with urllib.request.urlopen(url, timeout=20) as response:
-        data = json.load(response)
-    files = data.get("releases", {}).get(version, [])
-    if files:
-        print(f"https://pypi.org/project/{package}/{version}/")
-        for file in files:
-            print(file["filename"])
-        break
-    print(f"waiting for {package} {version} ({attempt + 1}/30)")
-    time.sleep(20)
-else:
-    raise SystemExit(f"{package} {version} did not appear on PyPI")
-PY
-```
-
-PyPI indexing can lag briefly. If publishing fails, report the workflow URL and
-failing step; do not attempt a manual upload without explicit approval.
-
-## Diagnostics
-
-Use the bundled helper only for narrow release diagnostics:
-
-```bash
-.venv/bin/python .codex/skills/build-release/scripts/release_build.py check-version
-.venv/bin/python .codex/skills/build-release/scripts/release_build.py check-tools
-.venv/bin/python .codex/skills/build-release/scripts/release_build.py latest-pypi
-```
-
-Useful workflow inspection commands:
-
-```bash
-gh run view <run-id> --web
-gh run view <run-id> --log-failed
-gh run view <run-id> --json url,status,conclusion,event,headBranch,headSha,displayTitle
-```
-
-## Final response
-
-When publishing succeeds, lead with
-`https://pypi.org/project/breakout-turbo-env/<version>/`. Report the tag,
-GitHub Actions run URL and conclusion, and wheel filenames. On failure, report
-the exact failed command, job, or step and the next safe recovery action.
+Confirm the `v<version>` tag resolves to the candidate SHA and the immutable
+GitHub Release contains all seven candidate files. Report the parity, candidate,
+and publish workflow URLs in the final response.

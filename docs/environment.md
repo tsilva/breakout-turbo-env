@@ -77,6 +77,30 @@ if done.any():
 The reset mask must be a Boolean NumPy array with shape `(num_envs,)` and must
 select at least one lane. Unselected lanes keep their exact state.
 
+### Stable-Baselines3
+
+Stable-Baselines3 expects its vector environments to auto-reset completed
+lanes. Use the optional adapter to make that translation explicit while
+keeping `BreakoutVecEnv` itself manual-reset:
+
+```python
+from stable_baselines3 import PPO
+
+from breakout_turbo_env import BreakoutVecEnv
+from breakout_turbo_env.sb3 import make_sb3_vec_env
+
+native_env = BreakoutVecEnv(num_envs=16, num_threads=8)
+env = make_sb3_vec_env(native_env)
+model = PPO("CnnPolicy", env).learn(total_timesteps=100_000)
+env.close()
+```
+
+Install `stable-baselines3` separately; it is not a core dependency. The
+adapter copies `terminal_observation` into each completed lane's info, calls
+`reset(options={"reset_mask": done})`, and leaves every other lane untouched.
+The complete runnable example is
+[`examples/sb3_manual_reset.py`](../examples/sb3_manual_reset.py).
+
 The built-in starts are `Start`, `checker`, `tunnel`, and `sparse`. Select them
 with a lane-aligned `start_ids` object array or `start_indices` int32 array in
 the reset options. `state_indices` is also accepted for Stable Retro

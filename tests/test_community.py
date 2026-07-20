@@ -87,5 +87,6 @@ def test_ci_covers_supported_python_versions_and_platforms():
     assert 'python-version: ["3.11", "3.12", "3.13", "3.14"]' in workflow
     assert "runner: macos-15" in workflow
     assert "runner: ubuntu-24.04" in workflow
-    assert "cargo clippy --all-targets -- -D warnings" in workflow
+    assert "cargo clippy --locked --all-targets -- -D warnings" in workflow
     assert 'pytest -m "not stable_retro"' in workflow
+    assert "actions/dependency-review-action@" in workflow

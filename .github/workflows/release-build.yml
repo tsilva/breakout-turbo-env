@@ -1,0 +1,275 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Exact 40-character commit SHA on main"
+        required: true
+        type: string
+      parity_run_id:
+        description: "Successful Controlled Stable Retro parity workflow run id"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  attestations: write
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-candidate-${{ inputs.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  PYTHON_VERSION: "3.13"
+  UV_CACHE_DIR: .uv-cache
+
+jobs:
+  validate:
+    name: Validate release source
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - name: Validate immutable ref
+        run: '[[ "${{ inputs.ref }}" =~ ^[0-9a-f]{40}$ ]]'
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve identity and require current main
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          commit="$(git rev-parse HEAD)"
+          test "$commit" = "${{ inputs.ref }}"
+          test "$commit" = "$(git rev-parse origin/main)"
+          version="$(tr -d '[:space:]' < VERSION.txt)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.13"
+
+      - name: Install locked release environment
+        run: uv sync --locked --extra dev
+
+      - name: Validate version, notes, lock, and unused PyPI version
+        run: |
+          .venv/bin/python scripts/lock.py
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            check-version --version "${{ steps.identity.outputs.version }}"
+          .venv/bin/python scripts/release_notes.py \
+            --version "${{ steps.identity.outputs.version }}" > /dev/null
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            check-pypi --version "${{ steps.identity.outputs.version }}"
+
+      - name: Run source checks
+        run: |
+          .venv/bin/python -m ruff check .
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo check --locked --release
+          cargo test --locked --lib
+          .venv/bin/python -m maturin develop --release --locked
+          .venv/bin/python -m pytest -m "not stable_retro"
+
+  build:
+    name: Build ${{ matrix.platform }} wheel
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
+          - platform: linux
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.validate.outputs.commit }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.13"
+
+      - name: Restore platform-scoped Cargo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target-release
+          key: cargo-release-v2-${{ matrix.platform }}-${{ runner.arch }}-${{ needs.validate.outputs.commit }}
+          restore-keys: |
+            cargo-release-v2-${{ matrix.platform }}-${{ runner.arch }}-
+
+      - name: Install locked release environment
+        run: uv sync --locked --extra dev
+
+      - name: Build wheel
+        run: |
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            build-platform --platform "${{ matrix.platform }}" \
+            --version "${{ needs.validate.outputs.version }}"
+
+      - name: Smoke wheel on supported Python bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(wheelhouse-v${{ needs.validate.outputs.version }}-${{ matrix.platform }}/*.whl)
+          test "${#wheels[@]}" -eq 1
+          uv python install 3.11 3.14
+          for python_version in 3.11 3.14; do
+            python_path="$(uv python find "$python_version")"
+            .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+              smoke-wheel "${wheels[0]}" --python "$python_path"
+          done
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.platform }}-wheel-v${{ needs.validate.outputs.version }}
+          path: wheelhouse-v${{ needs.validate.outputs.version }}-${{ matrix.platform }}/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  candidate:
+    name: Audit and attest candidate
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.validate.outputs.commit }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.13"
+
+      - name: Install locked release environment
+        run: uv sync --locked --extra dev
+
+      - name: Download platform wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: "*-wheel-v${{ needs.validate.outputs.version }}"
+          path: wheels
+          merge-multiple: true
+
+      - name: Build source distribution
+        run: |
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            build-sdist --version "${{ needs.validate.outputs.version }}"
+
+      - name: Assemble and audit exact distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p candidate/dist
+          cp wheels/*.whl candidate/dist/
+          cp wheelhouse-v${{ needs.validate.outputs.version }}-sdist/*.tar.gz candidate/dist/
+          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-macos
+          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-linux
+          cp candidate/dist/*macosx*.whl wheelhouse-v${{ needs.validate.outputs.version }}-macos/
+          cp candidate/dist/*manylinux*.whl wheelhouse-v${{ needs.validate.outputs.version }}-linux/
+          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
+            final-check --version "${{ needs.validate.outputs.version }}"
+
+      - name: Validate selected parity workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.parity_run_id }}")"
+          test "$(jq -r .conclusion <<< "$run")" = success
+          test "$(jq -r .event <<< "$run")" = workflow_dispatch
+          test "$(jq -r .path <<< "$run")" = .github/workflows/parity.yml
+
+      - name: Download exact parity receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: parity-receipt-${{ needs.validate.outputs.commit }}
+          path: parity
+          run-id: ${{ inputs.parity_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.22.2
+        with:
+          path: candidate/dist
+          format: spdx-json
+          output-file: candidate/sbom.spdx.json
+          syft-version: v1.48.0
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Create and verify candidate ledger
+        run: |
+          .venv/bin/python scripts/release_state.py candidate \
+            --candidate candidate \
+            --parity-receipt parity/parity-receipt.json \
+            --version "${{ needs.validate.outputs.version }}" \
+            --commit "${{ needs.validate.outputs.commit }}" \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}"
+          .venv/bin/python scripts/release_state.py verify \
+            --candidate candidate \
+            --version "${{ needs.validate.outputs.version }}" \
+            --commit "${{ needs.validate.outputs.commit }}" \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" > /dev/null
+
+      - name: Attest distribution provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-checksums: candidate/SHA256SUMS
+
+      - name: Attest distribution SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-checksums: candidate/SHA256SUMS
+          sbom-path: candidate/sbom.spdx.json
+
+      - name: Upload immutable candidate bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-v${{ needs.validate.outputs.version }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 90

@@ -23,11 +23,16 @@ VERSION_PATH = REPO_ROOT / "VERSION.txt"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CARGO_TOML = REPO_ROOT / "Cargo.toml"
 CARGO_LOCK = REPO_ROOT / "Cargo.lock"
+UV_LOCK = REPO_ROOT / "uv.lock"
 CITATION = REPO_ROOT / "CITATION.cff"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 PACKAGE_NAME = "breakout-turbo-env"
 IMPORT_NAME = "breakout_turbo_env"
 EXTENSION_NAME = "_breakout_turbo"
+MATURIN_IMAGE = (
+    "ghcr.io/pyo3/maturin@"
+    "sha256:2665227312dd1eab1c29c70a001dc8aac53155a2d048bede3b2df7f1691c8e38"
+)
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+|\.post\d+|\.dev\d+)?$")
 
 
@@ -127,10 +132,41 @@ def replace_section_version(path: Path, section: str, version: str) -> None:
     raise RuntimeError(f"could not replace version in [{section}] of {path}")
 
 
+def replace_package_version(path: Path, package_name: str, version: str) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    in_package = False
+    matching_package = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "[[package]]":
+            in_package = True
+            matching_package = False
+            continue
+        if stripped.startswith("[[") or (
+            stripped.startswith("[") and stripped.endswith("]")
+        ):
+            in_package = False
+            matching_package = False
+            continue
+        if not in_package:
+            continue
+        if stripped.startswith("name = "):
+            matching_package = stripped.split("=", 1)[1].strip().strip('"') == package_name
+            continue
+        if matching_package and stripped.startswith("version = "):
+            newline = "\n" if line.endswith("\n") else ""
+            lines[index] = f'version = "{version}"{newline}'
+            path.write_text("".join(lines), encoding="utf-8")
+            return
+    raise RuntimeError(f"could not replace {package_name!r} version in {path}")
+
+
 def write_version(version: str) -> None:
     VERSION_PATH.write_text(f"{version}\n", encoding="utf-8")
     replace_section_version(PYPROJECT, "project", version)
     replace_section_version(CARGO_TOML, "package", version)
+    replace_package_version(CARGO_LOCK, PACKAGE_NAME, version)
+    replace_package_version(UV_LOCK, PACKAGE_NAME, version)
     citation = CITATION.read_text(encoding="utf-8")
     citation = re.sub(r"(?m)^version: .+$", f"version: {version}", citation, count=1)
     citation = re.sub(
@@ -188,11 +224,6 @@ def check_tools(_args: argparse.Namespace) -> None:
         "cargo": ["cargo", "--version"],
         "docker": ["docker", "--version"],
         "maturin": [str(PYTHON), "-m", "maturin", "--version"],
-        "cibuildwheel": [
-            str(PYTHON),
-            "-c",
-            "from importlib.metadata import version; print('cibuildwheel ' + version('cibuildwheel'))",
-        ],
         "twine": [str(PYTHON), "-m", "twine", "--version"],
     }
     result = {
@@ -204,6 +235,57 @@ def check_tools(_args: argparse.Namespace) -> None:
     missing = [name for name, check in result.items() if not check["ok"]]
     if missing:
         raise SystemExit(f"missing release tooling: {', '.join(missing)}")
+
+
+def check_lock_policy(_args: argparse.Namespace) -> None:
+    project = read_toml(PYPROJECT)
+    uv_config = project.get("tool", {}).get("uv", {})  # type: ignore[union-attr]
+    expected_constraints = {
+        "guardrails-ai!=0.10.1",
+        "mistralai!=2.4.6",
+    }
+    failures: list[str] = []
+    if uv_config.get("exclude-newer") != "7 days":  # type: ignore[union-attr]
+        failures.append("pyproject [tool.uv].exclude-newer must be '7 days'")
+    configured_constraints = set(uv_config.get("constraint-dependencies", []))  # type: ignore[union-attr]
+    if configured_constraints != expected_constraints:
+        failures.append(
+            "pyproject constraint-dependencies must contain only the approved bad-package constraints"
+        )
+    if uv_config.get("sources"):  # type: ignore[union-attr]
+        failures.append("pyproject [tool.uv].sources must remain empty")
+
+    lock = read_toml(UV_LOCK)
+    options = lock.get("options", {})
+    if options.get("exclude-newer-span") != "P7D":  # type: ignore[union-attr]
+        failures.append("uv.lock must record the rolling seven-day exclusion span")
+    if options.get("exclude-newer-package"):  # type: ignore[union-attr]
+        failures.append("uv.lock contains undeclared per-package exclude-newer exemptions")
+
+    manifest_constraints = {
+        f"{entry['name']}{entry['specifier']}"
+        for entry in lock.get("manifest", {}).get("constraints", [])  # type: ignore[union-attr]
+    }
+    if manifest_constraints != expected_constraints:
+        failures.append("uv.lock does not contain the approved bad-package constraints")
+
+    for package in lock.get("package", []):
+        name = package.get("name")
+        source = package.get("source", {})
+        if source == {"editable": "."} and name == PACKAGE_NAME:
+            continue
+        if source != {"registry": "https://pypi.org/simple"}:
+            failures.append(f"uv.lock has an unapproved source for {name}: {source}")
+
+    result = {
+        "exclude_newer": uv_config.get("exclude-newer"),  # type: ignore[union-attr]
+        "constraints": sorted(configured_constraints),
+        "package_count": len(lock.get("package", [])),
+        "failures": failures,
+    }
+    print(json.dumps(result, indent=2))
+    if failures:
+        raise SystemExit("; ".join(failures))
 
 
 def bump_version(args: argparse.Namespace) -> None:
@@ -337,23 +419,32 @@ def macos_build_env(root: Path = REPO_ROOT) -> dict[str, str]:
     }
 
 
-def linux_build_env(root: Path = REPO_ROOT) -> dict[str, str]:
-    target_dir = cargo_target_dir("linux", root).resolve()
-    return {
-        "CIBW_ARCHS_LINUX": "x86_64",
-        "CIBW_BEFORE_ALL_LINUX": (
-            "curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal"
-        ),
-        "CIBW_BUILD": "cp311-manylinux_x86_64",
-        "CIBW_CONTAINER_ENGINE": (
-            f"docker; create_args: --volume={target_dir}:/cargo-target"
-        ),
-        "CIBW_ENVIRONMENT_LINUX": (
-            'PATH="$HOME/.cargo/bin:$PATH" '
-            "CARGO_NET_GIT_FETCH_WITH_CLI=true CARGO_TARGET_DIR=/cargo-target"
-        ),
-        "CIBW_SKIP": "*-musllinux_*",
-    }
+def linux_build_command(output: Path, root: Path = REPO_ROOT) -> list[str]:
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--platform",
+        "linux/amd64",
+        "--volume",
+        f"{root.resolve()}:/io",
+        "--volume",
+        f"{cargo_target_dir('linux', root).resolve()}:/cargo-target",
+        "--workdir",
+        "/io",
+        "--env",
+        "CARGO_TARGET_DIR=/cargo-target",
+        "--env",
+        "RUSTUP_TOOLCHAIN=stable",
+        MATURIN_IMAGE,
+        "build",
+        "--release",
+        "--locked",
+        "--compatibility",
+        "manylinux_2_28",
+        "--out",
+        f"/io/{output.relative_to(root)}",
+    ]
 
 
 def build_platform(args: argparse.Namespace) -> None:
@@ -370,19 +461,7 @@ def build_platform(args: argparse.Namespace) -> None:
             env=env,
         )
         return
-    env.update(linux_build_env())
-    run(
-        [
-            str(PYTHON),
-            "-m",
-            "cibuildwheel",
-            "--platform",
-            "linux",
-            "--output-dir",
-            str(output),
-        ],
-        env=env,
-    )
+    run(linux_build_command(output))
 
 
 def build_sdist(args: argparse.Namespace) -> None:
@@ -547,11 +626,16 @@ def smoke_wheel(args: argparse.Namespace) -> None:
         )
         code = f"""
 import numpy as np
+from pathlib import Path
 import {IMPORT_NAME}
 from {IMPORT_NAME} import {EXTENSION_NAME}
 assert hasattr({IMPORT_NAME}, "BreakoutVecEnv")
-assert {IMPORT_NAME}.__file__.startswith({str(environment)!r})
-assert {EXTENSION_NAME}.__file__.startswith({str(environment)!r})
+environment_root = Path({str(environment)!r}).resolve()
+for module in ({IMPORT_NAME}, {EXTENSION_NAME}):
+    module_path = Path(module.__file__).resolve()
+    assert module_path.is_relative_to(environment_root), (
+        f"{{module.__name__}} imported from {{module_path}}, outside {{environment_root}}"
+    )
 env = {IMPORT_NAME}.BreakoutVecEnv(num_envs=2, num_threads=1)
 try:
     assert env.supports_live_snapshots is True
@@ -636,6 +720,9 @@ def main() -> None:
 
     tools = commands.add_parser("check-tools")
     tools.set_defaults(func=check_tools)
+
+    lock_policy = commands.add_parser("check-lock-policy")
+    lock_policy.set_defaults(func=check_lock_policy)
 
     bump = commands.add_parser("bump-version")
     bump.add_argument("--to")

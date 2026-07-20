@@ -6,6 +6,23 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added an optional Stable-Baselines3 adapter and example that preserves
+  terminal observations while resetting only completed lanes.
+- Added CodeQL coverage for Python, Rust, and GitHub Actions, plus SPDX SBOM
+  and signed build-provenance attestations for release distributions.
+
+### Changed
+
+- Replaced tag-triggered publication with a controlled parity receipt,
+  content-addressed release candidate, protected manual approval, and
+  dedicated GitHub App tag/release authority.
+- Made Python and Rust lock enforcement hermetic and replaced the Linux
+  network bootstrap with a digest-pinned official maturin builder.
+- Made clean-install smoke checks compare canonical paths so macOS `/var` and
+  `/private/var` aliases cannot cause false failures.
+
 ## [0.3.5] - 2026-07-20
 
 ### Added

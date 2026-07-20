@@ -1,4 +1,4 @@
-.PHONY: benchmark develop develop-release lint play release test test-python test-rust test-stable-retro
+.PHONY: benchmark develop develop-release lint play release-prepare test test-python test-rust test-stable-retro
 
 PYTHON ?= .venv/bin/python
 UV_CACHE_DIR ?= .uv-cache
@@ -9,7 +9,7 @@ develop:
 	UV_CACHE_DIR=$(UV_CACHE_DIR) $(PYTHON) -m maturin develop
 
 develop-release:
-	UV_CACHE_DIR=$(UV_CACHE_DIR) $(PYTHON) -m maturin develop --release
+	UV_CACHE_DIR=$(UV_CACHE_DIR) $(PYTHON) -m maturin develop --release --locked
 
 benchmark: develop-release
 	$(PYTHON) -m breakout_turbo_env.benchmark
@@ -20,14 +20,14 @@ play: develop-release
 lint:
 	$(PYTHON) -m ruff check .
 	cargo fmt --check
-	cargo clippy --all-targets -- -D warnings
+	cargo clippy --locked --all-targets -- -D warnings
 
-release:
-	UV_CACHE_DIR=$(UV_CACHE_DIR) uv sync --frozen --extra dev
-	scripts/release.py
+release-prepare:
+	UV_CACHE_DIR=$(UV_CACHE_DIR) uv sync --locked --extra dev
+	scripts/release.py prepare
 
 test-rust:
-	cargo test --lib
+	cargo test --locked --lib
 
 test-python:
 	$(PYTHON) -m pytest $(PYTEST_ARGS)

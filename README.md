@@ -39,7 +39,7 @@ toolchain, then run:
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --frozen --extra dev --extra play --extra train
+uv sync --locked --extra dev --extra play --extra train
 make develop-release
 ```
 
@@ -84,6 +84,11 @@ legacy native-action alias. The complete lifecycle, configuration, snapshot,
 and branching contract is in the
 [environment documentation](docs/environment.md).
 
+Stable-Baselines3 users can wrap the already-vectorized environment with the
+optional, explicitly auto-resetting adapter in
+[`examples/sb3_manual_reset.py`](examples/sb3_manual_reset.py). SB3 remains a
+separate install and is not part of the core dependency set.
+
 ## Commands
 
 ```bash
@@ -93,7 +98,7 @@ uv run breakout-turbo-env benchmark               # benchmark the policy path
 uv run python scripts/compare_stable_retro.py     # run live differential checks
 uv run ruff check .                               # lint Python
 uv run pytest -m "not stable_retro"               # run regular Python tests
-cargo test --lib                                  # run Rust tests
+cargo test --locked --lib                         # run Rust tests
 make test-stable-retro                            # require live cartridge parity
 uv run python train.py jerk                       # train a deterministic action tape
 uv run --extra train python train.py ppo          # train a PPO policy

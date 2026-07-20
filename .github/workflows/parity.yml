@@ -1,0 +1,99 @@
+name: Controlled Stable Retro parity
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Exact 40-character commit SHA to validate"
+        required: true
+        type: string
+      version:
+        description: "Release version at that commit"
+        required: true
+        type: string
+      reference_commit:
+        description: "Exact stable-retro-turbo commit provisioned on the runner"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parity-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  parity:
+    name: Live cartridge parity
+    runs-on: [self-hosted, breakout-parity]
+    timeout-minutes: 90
+    env:
+      BREAKOUT_REQUIRE_STABLE_RETRO: "1"
+      BREAKOUT_STABLE_RETRO_REPO: ${{ vars.PARITY_STABLE_RETRO_REPO }}
+    steps:
+      - name: Validate immutable inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.ref }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.reference_commit }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test -n "$BREAKOUT_STABLE_RETRO_REPO"
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Verify candidate and controlled reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ inputs.ref }}"
+          test "$(tr -d '[:space:]' < VERSION.txt)" = "${{ inputs.version }}"
+          test "$(git -C "$BREAKOUT_STABLE_RETRO_REPO" rev-parse HEAD)" = \
+            "${{ inputs.reference_commit }}"
+          test -z "$(git -C "$BREAKOUT_STABLE_RETRO_REPO" status --porcelain --untracked-files=no)"
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.13"
+
+      - name: Install locked validation environment
+        run: uv sync --locked --extra dev
+
+      - name: Build native extension
+        run: .venv/bin/python -m maturin develop --release --locked
+
+      - name: Run required live parity suite
+        run: make test-stable-retro PYTHON=.venv/bin/python
+
+      - name: Create non-restricted parity receipt
+        if: success()
+        run: |
+          .venv/bin/python scripts/release_state.py parity-receipt \
+            --version "${{ inputs.version }}" \
+            --commit "${{ inputs.ref }}" \
+            --repository "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --stable-retro-repository "stable-retro-turbo" \
+            --stable-retro-commit "${{ inputs.reference_commit }}" \
+            --output parity-receipt.json
+
+      - name: Upload parity receipt only
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: parity-receipt-${{ inputs.ref }}
+          path: parity-receipt.json
+          if-no-files-found: error
+          retention-days: 90

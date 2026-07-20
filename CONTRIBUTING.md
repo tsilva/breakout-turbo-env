@@ -18,7 +18,7 @@ Install [uv](https://docs.astral.sh/uv/) and a Rust toolchain, then run:
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --frozen --extra dev --extra play --extra train
+uv sync --locked --extra dev --extra play --extra train
 make develop-release
 ```
 
@@ -27,8 +27,8 @@ make develop-release
 ```bash
 uv run ruff check .
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test --lib
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --lib
 uv run pytest -m "not stable_retro"
 ```
 

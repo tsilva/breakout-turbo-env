@@ -18,6 +18,19 @@ env:
   UV_CACHE_DIR: .uv-cache
 
 jobs:
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Reject vulnerable dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+
   python:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
@@ -40,10 +53,10 @@ jobs:
           version: "0.11.13"
 
       - name: Install locked development environment
-        run: uv sync --frozen --extra dev --python "${{ matrix.python-version }}"
+        run: uv sync --locked --extra dev --python "${{ matrix.python-version }}"
 
       - name: Build native extension
-        run: .venv/bin/python -m maturin develop --release
+        run: .venv/bin/python -m maturin develop --release --locked
 
       - name: Run Python checks
         run: |
@@ -61,10 +74,10 @@ jobs:
         run: cargo fmt --check
 
       - name: Check lints
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Run tests
-        run: cargo test --lib
+        run: cargo test --locked --lib
 
   optional-extras:
     name: Optional player and trainer extras
@@ -84,10 +97,10 @@ jobs:
           version: "0.11.13"
 
       - name: Install optional extras
-        run: uv sync --frozen --extra dev --extra play --extra train
+        run: uv sync --locked --extra dev --extra play --extra train
 
       - name: Build native extension
-        run: .venv/bin/python -m maturin develop --release
+        run: .venv/bin/python -m maturin develop --release --locked
 
       - name: Smoke optional imports and commands
         env:
@@ -123,7 +136,7 @@ jobs:
           version: "0.11.13"
 
       - name: Install locked build environment
-        run: uv sync --frozen --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Build supported wheel
         run: |
