@@ -41,7 +41,9 @@ class _ObservationViewer:
 
 
 def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog=prog, description="Play breakout-turbo-env manually")
+    parser = argparse.ArgumentParser(
+        prog=prog, description="Play breakout-turbo-env manually"
+    )
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
     parser.add_argument(
         "--scale",
@@ -49,7 +51,9 @@ def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentPars
         default=_DEFAULT_PLAY_SCALE,
         help=f"integer window scale (default: {_DEFAULT_PLAY_SCALE})",
     )
-    parser.add_argument("--fps", type=int, default=60, help="display updates per second")
+    parser.add_argument(
+        "--fps", type=int, default=60, help="display updates per second"
+    )
     parser.add_argument(
         "--uncapped",
         action="store_true",
@@ -82,13 +86,15 @@ def _print_episode_stats(
     score = int(info["score"][0])
     lives = int(info["lives"][0])
     bricks_remaining = int(info["bricks_remaining"][0])
+    walls_cleared = int(info["walls_cleared"][0])
     native_ticks = int(info["tick"][0])
-    outcome = "cleared" if bricks_remaining == 0 else "game_over"
+    outcome = "cleared" if walls_cleared == 2 else "game_over"
     print(
         "episode_end"
         f" episode={episode} layout={layout} outcome={outcome}"
         f" score={score} return={episode_return:.1f} lives={lives}"
-        f" bricks_cleared={108 - bricks_remaining} native_ticks={native_ticks}"
+        f" walls_cleared={walls_cleared} bricks_remaining={bricks_remaining}"
+        f" native_ticks={native_ticks}"
         f" display_steps={display_steps} elapsed_seconds={elapsed:.2f}",
         flush=True,
     )
@@ -98,8 +104,9 @@ def _hud_text(info: dict[str, np.ndarray], *, paused: bool) -> str:
     score = int(info.get("score", np.zeros(1, dtype=np.int64))[0])
     lives = int(info.get("lives", np.ones(1, dtype=np.int64))[0])
     bricks = int(info.get("bricks_remaining", np.zeros(1, dtype=np.int64))[0])
+    walls = int(info.get("walls_cleared", np.zeros(1, dtype=np.int64))[0])
     status = "  PAUSED" if paused else ""
-    return f"SCORE {score:03d}    LIVES {lives}    BRICKS {bricks:02d}{status}"
+    return f"SCORE {score:03d}    LIVES {lives}    WALLS {walls}/2    BRICKS {bricks:02d}{status}"
 
 
 def _limit_frame_rate(clock, fps: int) -> None:
@@ -118,7 +125,9 @@ def run(
     uncapped: bool = False,
 ) -> None:
     if scale <= 0 or fps <= 0 or frame_skip <= 0 or max_frames < 0:
-        raise ValueError("scale, fps, and frame-skip must be positive; max-frames must be non-negative")
+        raise ValueError(
+            "scale, fps, and frame-skip must be positive; max-frames must be non-negative"
+        )
 
     try:
         import pygame
@@ -182,7 +191,15 @@ def run(
                 fire = keys[pygame.K_SPACE]
                 left = keys[pygame.K_LEFT] or keys[pygame.K_a]
                 right = keys[pygame.K_RIGHT] or keys[pygame.K_d]
-                action = 1 if fire else 3 if left and not right else 2 if right and not left else 0
+                action = (
+                    1
+                    if fire
+                    else 3
+                    if left and not right
+                    else 2
+                    if right and not left
+                    else 0
+                )
                 observation, reward, terminated, _, info = env.step(
                     np.array([action], dtype=np.uint8)
                 )
@@ -201,7 +218,10 @@ def run(
                     # The environment never autoresets. The player performs an
                     # explicit masked reset so the same lifecycle is exercised.
                     observation, info = env.reset(
-                        options={"reset_mask": reset_mask, "start_indices": start_indices}
+                        options={
+                            "reset_mask": reset_mask,
+                            "start_indices": start_indices,
+                        }
                     )
                     episode_return = 0.0
                     episode_steps = 0

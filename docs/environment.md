@@ -10,6 +10,11 @@ batch.
 from breakout_turbo_env import BreakoutVecEnv
 
 env = BreakoutVecEnv(
+    "Breakout-Atari2600-v0",
+    state="Start",
+    scenario="scenario",
+    info="data",
+    use_restricted_actions="filtered",
     num_envs=16,
     num_threads=8,
     obs_resize=(84, 84),
@@ -19,23 +24,27 @@ env = BreakoutVecEnv(
 )
 ```
 
-Importing the package also registers `BreakoutTurbo-v0`:
+Importing the package registers the Stable Retro-compatible environment id:
 
 ```python
 import gymnasium as gym
 import breakout_turbo_env  # registers the vector entry point
 
-env = gym.make_vec("BreakoutTurbo-v0", num_envs=16, num_threads=8)
+env = gym.make_vec("Breakout-Atari2600-v0", num_envs=16, num_threads=8)
 ```
 
-The supported configuration options are the keyword parameters exposed by
-`BreakoutVecEnv`. Unsupported options fail immediately instead of being
-silently ignored.
+The canonical constructor accepts the same explicit Breakout fields used by
+Stable Retro Turbo. Options whose semantics cannot be reproduced fail
+immediately. `BreakoutTurbo-v0` remains a legacy alias with the native action
+interface.
 
 ## Actions, observations, and rewards
 
-- Each action batch has shape `(num_envs,)` and uses `uint8` values: `0` noop,
-  `1` FIRE, `2` right, and `3` left.
+- With `use_restricted_actions="filtered"`, each action batch has shape
+  `(num_envs, 8)` and uses Stable Retro's button vectors. The supported rows
+  are noop, FIRE, right, and left. The native convenience interface omits that
+  option and accepts `(num_envs,)` values: `0` noop, `1` FIRE, `2` right, and
+  `3` left.
 - The default policy observation has shape `(num_envs, 4, 84, 84)`, CHW layout,
   grayscale `uint8` values, four stacked frames, and four native frames per
   environment step.
@@ -67,10 +76,11 @@ if done.any():
 The reset mask must be a Boolean NumPy array with shape `(num_envs,)` and must
 select at least one lane. Unselected lanes keep their exact state.
 
-The built-in starts are `full`, `checker`, `tunnel`, and `sparse`. Select them
+The built-in starts are `Start`, `checker`, `tunnel`, and `sparse`. Select them
 with a lane-aligned `start_ids` object array or `start_indices` int32 array in
-the reset options. There is no random reset distribution, so `reset(seed=...)`
-accepts but does not use the seed.
+the reset options. `state_indices` is also accepted for Stable Retro
+compatibility, and the legacy `full` name aliases `Start`. There is no random
+reset distribution, so `reset(seed=...)` accepts but does not use the seed.
 
 ## Info filtering
 
@@ -81,6 +91,15 @@ events, and pending reset. `ball_y` matches Stable Retro's Atari RAM info value:
 it is zero while the cartridge is waiting for FIRE and uses the cartridge's
 integer coordinate while the ball is active. Gymnasium-style underscore masks
 identify which lanes contain each value.
+
+The cartridge lifecycle contains two walls, not independently terminating
+levels. Clearing wall one reaches 432 points; the selected layout reappears one
+native frame after the ball's next paddle return. Clearing wall two reaches the
+Atari maximum score of 864 and leaves the board empty permanently. Play
+continues on that empty board until all five lives have been lost. The
+`walls_cleared` signal distinguishes this progress from `bricks_remaining`,
+which describes only the current wall. `brick_mask` contains the signed low 64
+bits and `brick_mask_high` contains the remaining high 44 bits.
 
 ## Snapshots and branches
 
@@ -104,6 +123,6 @@ restoration.
 - The API is community-preview software under a `0.x` version. Minor releases
   may change documented public APIs and will record changes in the changelog.
 - The only supported distributions are Apple-silicon macOS and x86-64 Linux.
-- The `full` start targets exact Stable Retro cartridge parity. Other layouts
+- The canonical `Start` state targets exact Stable Retro cartridge parity. Other layouts
   deliberately change only the brick mask.
 - The package does not include a ROM, save state, or recorded reference frame.

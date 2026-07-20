@@ -26,6 +26,18 @@ try:
         entry_point=None,
         vector_entry_point="breakout_turbo_env:BreakoutVecEnv",
     )
+    gym.register(
+        id="Breakout-Atari2600-v0",
+        entry_point=None,
+        vector_entry_point="breakout_turbo_env:BreakoutVecEnv",
+        kwargs={
+            "game": "Breakout-Atari2600-v0",
+            "state": "Start",
+            "scenario": "scenario",
+            "info": "data",
+            "use_restricted_actions": "filtered",
+        },
+    )
 except Exception:
     # Registration is best-effort so importing the native class stays usable in
     # minimal environments and duplicate imports remain harmless.

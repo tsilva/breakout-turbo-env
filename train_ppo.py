@@ -40,11 +40,15 @@ def create_run_dir(runs_dir: Path, *, algo: str = "ppo") -> Path:
         except FileExistsError:
             continue
         return run_dir
-    raise RuntimeError(f"could not allocate a timestamped run directory under {algorithm_dir}")
+    raise RuntimeError(
+        f"could not allocate a timestamped run directory under {algorithm_dir}"
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train a PPO policy for breakout-turbo-env.")
+    parser = argparse.ArgumentParser(
+        description="Train a PPO policy for breakout-turbo-env."
+    )
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
     parser.add_argument("--num-envs", type=int, default=128)
     parser.add_argument("--horizon", type=int, default=128)
@@ -68,17 +72,32 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _validate(args: argparse.Namespace) -> None:
-    positive_ints = ("num_envs", "horizon", "updates", "epochs", "minibatch_size", "frame_skip", "max_eval_steps", "eval_every")
+    positive_ints = (
+        "num_envs",
+        "horizon",
+        "updates",
+        "epochs",
+        "minibatch_size",
+        "frame_skip",
+        "max_eval_steps",
+        "eval_every",
+    )
     if any(getattr(args, name) <= 0 for name in positive_ints):
-        raise ValueError("num-envs, horizon, updates, epochs, minibatch-size, frame-skip, max-eval-steps, and eval-every must be positive")
+        raise ValueError(
+            "num-envs, horizon, updates, epochs, minibatch-size, frame-skip, max-eval-steps, and eval-every must be positive"
+        )
     if args.minibatch_size > args.num_envs * args.horizon:
         raise ValueError("minibatch-size cannot exceed num-envs * horizon")
     if args.learning_rate <= 0 or args.tracking_reward < 0:
-        raise ValueError("learning-rate must be positive and tracking-reward must be non-negative")
+        raise ValueError(
+            "learning-rate must be positive and tracking-reward must be non-negative"
+        )
     if not 0 < args.gamma <= 1 or not 0 <= args.gae_lambda <= 1:
         raise ValueError("gamma must be in (0, 1] and gae-lambda must be in [0, 1]")
     if not 0 < args.clip_ratio < 1 or args.entropy_coef < 0 or args.value_coef < 0:
-        raise ValueError("clip-ratio must be in (0, 1); entropy-coef and value-coef must be non-negative")
+        raise ValueError(
+            "clip-ratio must be in (0, 1); entropy-coef and value-coef must be non-negative"
+        )
 
 
 def features(info: dict[str, np.ndarray]) -> np.ndarray:
@@ -110,7 +129,9 @@ def tracking_actions(info: dict[str, np.ndarray]) -> np.ndarray:
     return actions
 
 
-def _reset(env: BreakoutVecEnv, layout: str, mask: np.ndarray | None = None) -> dict[str, np.ndarray]:
+def _reset(
+    env: BreakoutVecEnv, layout: str, mask: np.ndarray | None = None
+) -> dict[str, np.ndarray]:
     if mask is None:
         mask = np.ones(env.num_envs, dtype=np.bool_)
     starts = np.full(env.num_envs, layout, dtype=object)
@@ -138,7 +159,9 @@ def _actor_critic(torch: Any):
     return ActorCritic()
 
 
-def evaluate(model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps: int) -> EvalResult:
+def evaluate(
+    model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps: int
+) -> EvalResult:
     env = BreakoutVecEnv(
         num_envs=1,
         num_threads=1,
@@ -157,7 +180,7 @@ def evaluate(model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps:
                 action = torch.argmax(logits, dim=1).numpy().astype(np.uint8)
             _, reward, terminated, _, info = env.step(action)
             total_reward += float(reward[0])
-            if info["bricks_remaining"][0] == 0:
+            if info["walls_cleared"][0] == 2:
                 return EvalResult(
                     score=int(info["score"][0]),
                     reward=total_reward,
@@ -171,7 +194,7 @@ def evaluate(model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps:
                     reward=total_reward,
                     lives=int(info["lives"][0]),
                     steps=step,
-                    solved=bool(info["bricks_remaining"][0] == 0),
+                    solved=bool(info["walls_cleared"][0] == 2),
                 )
         return EvalResult(
             score=int(info["score"][0]),
@@ -184,7 +207,15 @@ def evaluate(model: Any, torch: Any, *, layout: str, frame_skip: int, max_steps:
         env.close()
 
 
-def save_policy(path: Path, model: Any, *, layout: str, frame_skip: int, seed: int, result: EvalResult) -> None:
+def save_policy(
+    path: Path,
+    model: Any,
+    *,
+    layout: str,
+    frame_skip: int,
+    seed: int,
+    result: EvalResult,
+) -> None:
     """Save a safe NumPy artifact so playback does not deserialize Python objects."""
     metadata = {
         "algorithm": "PPO",
@@ -207,7 +238,10 @@ def save_policy(path: Path, model: Any, *, layout: str, frame_skip: int, seed: i
         "steps": result.steps,
         "solved": result.solved,
     }
-    arrays = {name.replace(".", "__"): tensor.detach().cpu().numpy() for name, tensor in model.state_dict().items()}
+    arrays = {
+        name.replace(".", "__"): tensor.detach().cpu().numpy()
+        for name, tensor in model.state_dict().items()
+    }
     arrays["metadata_json"] = np.asarray(json.dumps(metadata, separators=(",", ":")))
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **arrays)
@@ -220,8 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         import torch
     except ImportError as exc:
         raise SystemExit(
-            "PPO training requires the train extra; "
-            "install `breakout-turbo-env[train]`"
+            "PPO training requires the train extra; install `breakout-turbo-env[train]`"
         ) from exc
 
     torch.manual_seed(args.seed)
@@ -245,7 +278,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         for update in range(1, args.updates + 1):
-            observations = np.empty((args.horizon, args.num_envs, _FEATURES), dtype=np.float32)
+            observations = np.empty(
+                (args.horizon, args.num_envs, _FEATURES), dtype=np.float32
+            )
             actions = np.empty((args.horizon, args.num_envs), dtype=np.int64)
             log_probs = np.empty((args.horizon, args.num_envs), dtype=np.float32)
             values = np.empty((args.horizon, args.num_envs), dtype=np.float32)
@@ -265,8 +300,14 @@ def main(argv: list[str] | None = None) -> int:
                     log_probs[step] = distribution.log_prob(action).numpy()
                     values[step] = value.numpy()
 
-                _, extrinsic_reward, terminated, _, next_info = env.step(actions[step].astype(np.uint8))
-                shaped_reward = np.where(actions[step] == target_actions, args.tracking_reward, -args.tracking_reward)
+                _, extrinsic_reward, terminated, _, next_info = env.step(
+                    actions[step].astype(np.uint8)
+                )
+                shaped_reward = np.where(
+                    actions[step] == target_actions,
+                    args.tracking_reward,
+                    -args.tracking_reward,
+                )
                 rewards[step] = extrinsic_reward + shaped_reward.astype(np.float32)
                 dones[step] = terminated.astype(np.float32)
                 if terminated.any():
@@ -283,18 +324,28 @@ def main(argv: list[str] | None = None) -> int:
             last_advantage = np.zeros(args.num_envs, dtype=np.float32)
             for step in range(args.horizon - 1, -1, -1):
                 nonterminal = 1.0 - dones[step]
-                bootstrap = next_value_np if step == args.horizon - 1 else values[step + 1]
-                delta = rewards[step] + args.gamma * bootstrap * nonterminal - values[step]
-                last_advantage = delta + args.gamma * args.gae_lambda * nonterminal * last_advantage
+                bootstrap = (
+                    next_value_np if step == args.horizon - 1 else values[step + 1]
+                )
+                delta = (
+                    rewards[step] + args.gamma * bootstrap * nonterminal - values[step]
+                )
+                last_advantage = (
+                    delta + args.gamma * args.gae_lambda * nonterminal * last_advantage
+                )
                 advantages[step] = last_advantage
             returns = advantages + values
 
-            flat_observations = torch.from_numpy(observations.reshape(batch_size, _FEATURES))
+            flat_observations = torch.from_numpy(
+                observations.reshape(batch_size, _FEATURES)
+            )
             flat_actions = torch.from_numpy(actions.reshape(batch_size))
             flat_log_probs = torch.from_numpy(log_probs.reshape(batch_size))
             flat_advantages = torch.from_numpy(advantages.reshape(batch_size))
             flat_returns = torch.from_numpy(returns.reshape(batch_size))
-            flat_advantages = (flat_advantages - flat_advantages.mean()) / (flat_advantages.std() + 1e-8)
+            flat_advantages = (flat_advantages - flat_advantages.mean()) / (
+                flat_advantages.std() + 1e-8
+            )
 
             for _ in range(args.epochs):
                 for indices in torch.randperm(batch_size).split(args.minibatch_size):
@@ -303,11 +354,20 @@ def main(argv: list[str] | None = None) -> int:
                     new_log_probs = distribution.log_prob(flat_actions[indices])
                     ratio = (new_log_probs - flat_log_probs[indices]).exp()
                     unclipped = ratio * flat_advantages[indices]
-                    clipped = torch.clamp(ratio, 1 - args.clip_ratio, 1 + args.clip_ratio) * flat_advantages[indices]
+                    clipped = (
+                        torch.clamp(ratio, 1 - args.clip_ratio, 1 + args.clip_ratio)
+                        * flat_advantages[indices]
+                    )
                     policy_loss = -torch.minimum(unclipped, clipped).mean()
-                    value_loss = torch.nn.functional.mse_loss(predicted_values, flat_returns[indices])
+                    value_loss = torch.nn.functional.mse_loss(
+                        predicted_values, flat_returns[indices]
+                    )
                     entropy = distribution.entropy().mean()
-                    loss = policy_loss + args.value_coef * value_loss - args.entropy_coef * entropy
+                    loss = (
+                        policy_loss
+                        + args.value_coef * value_loss
+                        - args.entropy_coef * entropy
+                    )
                     optimizer.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -315,7 +375,11 @@ def main(argv: list[str] | None = None) -> int:
 
             if update % args.eval_every == 0 or update == args.updates:
                 latest_eval = evaluate(
-                    model, torch, layout=args.layout, frame_skip=args.frame_skip, max_steps=args.max_eval_steps
+                    model,
+                    torch,
+                    layout=args.layout,
+                    frame_skip=args.frame_skip,
+                    max_steps=args.max_eval_steps,
                 )
                 print(
                     f"update={update} eval_score={latest_eval.score} eval_reward={latest_eval.reward:.1f} "
@@ -328,9 +392,22 @@ def main(argv: list[str] | None = None) -> int:
         env.close()
 
     if latest_eval is None:
-        latest_eval = evaluate(model, torch, layout=args.layout, frame_skip=args.frame_skip, max_steps=args.max_eval_steps)
+        latest_eval = evaluate(
+            model,
+            torch,
+            layout=args.layout,
+            frame_skip=args.frame_skip,
+            max_steps=args.max_eval_steps,
+        )
     policy_path = run_dir / "policy.npz"
-    save_policy(policy_path, model, layout=args.layout, frame_skip=args.frame_skip, seed=args.seed, result=latest_eval)
+    save_policy(
+        policy_path,
+        model,
+        layout=args.layout,
+        frame_skip=args.frame_skip,
+        seed=args.seed,
+        result=latest_eval,
+    )
     print(f"saved={policy_path} verified={latest_eval.solved}")
     return 0 if latest_eval.solved else 2
 

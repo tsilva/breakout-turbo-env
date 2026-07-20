@@ -62,9 +62,10 @@ if done.any():
 env.close()
 ```
 
-Importing the package also registers `BreakoutTurbo-v0`, so callers may use
-`gymnasium.make_vec("BreakoutTurbo-v0", ...)`. The complete lifecycle,
-configuration, snapshot, and branching contract is in the
+Importing the package registers the Stable Retro-compatible
+`Breakout-Atari2600-v0` environment. `BreakoutTurbo-v0` remains available as a
+legacy native-action alias. The complete lifecycle, configuration, snapshot,
+and branching contract is in the
 [environment documentation](docs/environment.md).
 
 ## Commands
@@ -93,14 +94,17 @@ options.
   policy observation is grayscale `uint8`, CHW, and shaped
   `(num_envs, 4, 84, 84)`.
 - Rewards are score deltas using Atari row scoring. There is no life-loss or
-  board-clear shaping, and clearing the bricks does not terminate an episode.
+  board-clear shaping. The cartridge presents two walls: the first refills
+  after the next paddle return, the second ends at score 864 without another
+  refill, and only losing all five lives terminates the episode.
 - Autoreset is disabled. Reset terminated lanes explicitly with a Boolean
   `reset_mask`; unselected lanes remain byte-exact.
-- The `full` start targets Stable Retro's native 160×210 Atari Breakout frame,
+- The canonical `Start` state targets Stable Retro's native 160×210 Atari Breakout frame,
   lifecycle, physics, raster, rewards, collision behavior, and public trajectory
   values. In particular, `ball_y` uses the Atari RAM convention where zero
   means the serve is waiting for FIRE. `render()` returns the RGB frame
-  separately from policy observations.
+  separately from policy observations. The legacy start name `full` aliases
+  `Start`.
 - Live validation requires a separately obtained lawful ROM and a sibling
   `stable-retro-turbo` checkout. No ROM, save state, or recorded reference
   frame is distributed by this project.

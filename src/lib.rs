@@ -15,8 +15,10 @@ const BRICK_COLS: usize = 18;
 const BRICK_ROWS: usize = 6;
 const BRICK_ROW_POINTS: [i32; BRICK_ROWS] = [7, 7, 4, 4, 1, 1];
 const FULL_BRICKS: u128 = (1u128 << (BRICK_COLS * BRICK_ROWS)) - 1;
+const FULL_WALL_SCORE: i32 = 18 * (7 + 7 + 4 + 4 + 1 + 1);
+const ATARI_TOP_SCORE: i32 = 2 * FULL_WALL_SCORE;
 const BREAKTHROUGH_VY: i32 = 27 * FP / 8;
-const SIGNALS: usize = 14;
+const SIGNALS: usize = 16;
 // The cartridge's ball-Y RAM byte is the rendered top-edge coordinate minus
 // nine and reserves zero to mean that the serve is waiting for FIRE. Keep the
 // simulation in fixed point, but expose the Atari RAM value.
@@ -184,6 +186,7 @@ struct Lane {
     hud_lives: i32,
     tick: u64,
     layout_id: i32,
+    wall_phase: WallPhase,
     pending_reset: bool,
     last_collision: i64,
     awaiting_fire: bool,
@@ -203,6 +206,37 @@ struct Lane {
     visual_cache_valid: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum WallPhase {
+    First = 0,
+    FirstCleared = 1,
+    RefillArmed = 2,
+    Second = 3,
+    SecondCleared = 4,
+}
+
+impl WallPhase {
+    fn walls_cleared(self) -> i64 {
+        match self {
+            Self::First => 0,
+            Self::FirstCleared | Self::RefillArmed | Self::Second => 1,
+            Self::SecondCleared => 2,
+        }
+    }
+
+    fn from_byte(value: u8) -> Result<Self, &'static str> {
+        match value {
+            0 => Ok(Self::First),
+            1 => Ok(Self::FirstCleared),
+            2 => Ok(Self::RefillArmed),
+            3 => Ok(Self::Second),
+            4 => Ok(Self::SecondCleared),
+            _ => Err("state has an invalid wall phase"),
+        }
+    }
+}
+
 impl Lane {
     fn new(stack_size: usize) -> Self {
         Self {
@@ -218,6 +252,7 @@ impl Lane {
             hud_lives: 5,
             tick: 0,
             layout_id: 0,
+            wall_phase: WallPhase::First,
             pending_reset: false,
             last_collision: 0,
             awaiting_fire: true,
@@ -239,36 +274,47 @@ impl Lane {
     }
 }
 
+const fn checker_mask() -> u128 {
+    let mut mask = 0u128;
+    let mut index = 0usize;
+    while index < BRICK_COLS * BRICK_ROWS {
+        let row = index / BRICK_COLS;
+        let col = index % BRICK_COLS;
+        if (row + col) % 2 == 0 {
+            mask |= 1u128 << index;
+        }
+        index += 1;
+    }
+    mask
+}
+
+const fn tunnel_mask() -> u128 {
+    let mut mask = FULL_BRICKS;
+    let mut row = 1usize;
+    while row < BRICK_ROWS {
+        mask &= !(1u128 << (row * BRICK_COLS + 8));
+        mask &= !(1u128 << (row * BRICK_COLS + 9));
+        row += 1;
+    }
+    mask
+}
+
+const fn sparse_mask() -> u128 {
+    let mut mask = 0u128;
+    let mut col = 0usize;
+    while col < BRICK_COLS {
+        mask |= 1u128 << col;
+        mask |= 1u128 << ((BRICK_ROWS - 1) * BRICK_COLS + col);
+        col += 1;
+    }
+    mask
+}
+
+const LAYOUT_MASKS: [u128; 4] = [FULL_BRICKS, checker_mask(), tunnel_mask(), sparse_mask()];
+
 fn layout_mask(layout_id: i32) -> Option<u128> {
     match layout_id {
-        0 => Some(FULL_BRICKS),
-        1 => {
-            let mut mask = 0u128;
-            for row in 0..BRICK_ROWS {
-                for col in 0..BRICK_COLS {
-                    if (row + col) % 2 == 0 {
-                        mask |= 1u128 << (row * BRICK_COLS + col);
-                    }
-                }
-            }
-            Some(mask)
-        }
-        2 => {
-            let mut mask = FULL_BRICKS;
-            for row in 1..BRICK_ROWS {
-                mask &= !(1u128 << (row * BRICK_COLS + 8));
-                mask &= !(1u128 << (row * BRICK_COLS + 9));
-            }
-            Some(mask)
-        }
-        3 => {
-            let mut mask = 0u128;
-            for col in 0..BRICK_COLS {
-                mask |= 1u128 << col;
-                mask |= 1u128 << ((BRICK_ROWS - 1) * BRICK_COLS + col);
-            }
-            Some(mask)
-        }
+        0..=3 => Some(LAYOUT_MASKS[layout_id as usize]),
         _ => None,
     }
 }
@@ -286,6 +332,7 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.hud_lives = 5;
     lane.tick = 0;
     lane.layout_id = layout_id;
+    lane.wall_phase = WallPhase::First;
     lane.pending_reset = false;
     lane.last_collision = 0;
     lane.awaiting_fire = true;
@@ -303,7 +350,7 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.stack_head = 0;
     lane.visual_cache_valid = false;
     let plane = preprocess.out_h * preprocess.out_w;
-    render_and_push(lane, preprocess, frame_stack);
+    render_and_push(lane, preprocess, frame_stack, false);
     for slot in 1..frame_stack {
         lane.stack.copy_within(0..plane, slot * plane);
     }
@@ -314,7 +361,14 @@ fn set_integer_preserving_fraction(value: i32, integer: i32) -> i32 {
     integer * FP + value.rem_euclid(FP)
 }
 
-fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
+fn step_native(lane: &mut Lane, action: u8) -> (f32, bool, bool) {
+    let refilled = if lane.wall_phase == WallPhase::RefillArmed {
+        lane.bricks = layout_mask(lane.layout_id).expect("validated layout");
+        lane.wall_phase = WallPhase::Second;
+        true
+    } else {
+        false
+    };
     let score_before = lane.score;
     lane.last_collision = 0;
     lane.hud_score = lane.score;
@@ -345,7 +399,7 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
             lane.brick_contact = false;
         }
         lane.tick += 1;
-        return (0.0, false);
+        return (0.0, false, refilled);
     }
 
     if lane.ball_y / FP >= 217 {
@@ -361,9 +415,9 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
         lane.tick += 1;
         if lane.lives <= 0 {
             lane.pending_reset = true;
-            return ((lane.score - score_before) as f32, true);
+            return ((lane.score - score_before) as f32, true, refilled);
         }
-        return ((lane.score - score_before) as f32, false);
+        return ((lane.score - score_before) as f32, false, refilled);
     }
 
     // The ROM consumes collision latches produced by the preceding raster
@@ -390,6 +444,13 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
                 }
                 lane.brick_contact = true;
                 lane.last_collision |= COLLISION_BRICK;
+                if lane.bricks == 0 {
+                    lane.wall_phase = match lane.wall_phase {
+                        WallPhase::First => WallPhase::FirstCleared,
+                        WallPhase::Second => WallPhase::SecondCleared,
+                        phase => phase,
+                    };
+                }
             }
         }
     }
@@ -424,6 +485,9 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
         apply_atari_speed(lane);
         lane.ball_vy = -lane.ball_vy.abs();
         lane.last_collision |= COLLISION_PADDLE;
+        if lane.wall_phase == WallPhase::FirstCleared {
+            lane.wall_phase = WallPhase::RefillArmed;
+        }
     }
     // The ROM resolves the horizontal playfield latch after the paddle
     // branch. At the lower corners this lets the wall reflection win when
@@ -441,7 +505,8 @@ fn step_native(lane: &mut Lane, action: u8) -> (f32, bool) {
 
     lane.collision_latches = raster_collision_latches(lane);
     lane.tick += 1;
-    ((lane.score - score_before) as f32, false)
+    debug_assert!(lane.layout_id != 0 || lane.score <= ATARI_TOP_SCORE);
+    ((lane.score - score_before) as f32, false, refilled)
 }
 
 fn paddle_measurement(charge: u16) -> u8 {
@@ -893,11 +958,16 @@ fn refresh_visual_delta(
     }
 }
 
-fn render_and_push(lane: &mut Lane, preprocess: &Preprocess, frame_stack: usize) {
+fn render_and_push(
+    lane: &mut Lane,
+    preprocess: &Preprocess,
+    frame_stack: usize,
+    force_full_rebuild: bool,
+) {
     let visual = VisualState::from_lane(lane);
     let plane = preprocess.out_h * preprocess.out_w;
     let destination_slot = lane.stack_head;
-    if lane.visual_cache_valid {
+    if lane.visual_cache_valid && !force_full_rebuild {
         let source_slot = (destination_slot + frame_stack - 1) % frame_stack;
         if source_slot != destination_slot {
             lane.stack.copy_within(
@@ -937,15 +1007,17 @@ fn write_signals(lane: &Lane, dst: &mut [i64]) {
     dst[2] = atari_ball_y(lane);
     dst[3] = lane.ball_vx as i64;
     dst[4] = lane.ball_vy as i64;
-    dst[5] = lane.bricks as i64;
-    dst[6] = lane.score as i64;
-    dst[7] = lane.lives as i64;
-    dst[8] = lane.tick as i64;
-    dst[9] = lane.bricks.count_ones() as i64;
-    dst[10] = lane.layout_id as i64;
-    dst[11] = lane.last_collision;
-    dst[12] = lane.pending_reset as i64;
-    dst[13] = lane.awaiting_fire as i64;
+    dst[5] = lane.bricks as u64 as i64;
+    dst[6] = (lane.bricks >> 64) as i64;
+    dst[7] = lane.score as i64;
+    dst[8] = lane.lives as i64;
+    dst[9] = lane.tick as i64;
+    dst[10] = lane.bricks.count_ones() as i64;
+    dst[11] = lane.wall_phase.walls_cleared();
+    dst[12] = lane.layout_id as i64;
+    dst[13] = lane.last_collision;
+    dst[14] = lane.pending_reset as i64;
+    dst[15] = lane.awaiting_fire as i64;
 }
 
 fn put_i32(dst: &mut Vec<u8>, value: i32) {
@@ -999,7 +1071,7 @@ fn take_u16(src: &[u8], offset: &mut usize) -> Result<u16, &'static str> {
 
 fn serialize_lane(lane: &Lane) -> Vec<u8> {
     let mut out = Vec::with_capacity(64 + lane.stack.len());
-    out.extend_from_slice(b"BTO9");
+    out.extend_from_slice(b"BTO10");
     for value in [
         lane.paddle_x,
         lane.ball_x,
@@ -1015,6 +1087,7 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
         put_i32(&mut out, value);
     }
     put_u128(&mut out, lane.bricks);
+    out.push(lane.wall_phase as u8);
     put_u64(&mut out, lane.tick);
     put_u64(&mut out, lane.last_collision as u64);
     put_u64(&mut out, lane.stack_head as u64);
@@ -1035,10 +1108,10 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
 }
 
 fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static str> {
-    if data.get(0..4) != Some(b"BTO9") {
+    if data.get(0..5) != Some(b"BTO10") {
         return Err("state has an invalid header");
     }
-    let mut offset = 4;
+    let mut offset = 5;
     let paddle_x = take_i32(data, &mut offset)?;
     let ball_x = take_i32(data, &mut offset)?;
     let ball_y = take_i32(data, &mut offset)?;
@@ -1050,6 +1123,8 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     let hud_lives = take_i32(data, &mut offset)?;
     let layout_id = take_i32(data, &mut offset)?;
     let bricks = take_u128(data, &mut offset)?;
+    let wall_phase = WallPhase::from_byte(*data.get(offset).ok_or("state is truncated")?)?;
+    offset += 1;
     let tick = take_u64(data, &mut offset)?;
     let last_collision = take_u64(data, &mut offset)? as i64;
     let stack_head = take_u64(data, &mut offset)? as usize;
@@ -1080,6 +1155,25 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     if stack.len() != expected_stack {
         return Err("state observation shape does not match this environment");
     }
+    if layout_mask(layout_id).is_none() {
+        return Err("state has an invalid layout");
+    }
+    if bricks & !FULL_BRICKS != 0 {
+        return Err("state has brick bits outside the playfield");
+    }
+    if matches!(
+        wall_phase,
+        WallPhase::FirstCleared | WallPhase::RefillArmed | WallPhase::SecondCleared
+    ) && bricks != 0
+    {
+        return Err("state wall phase conflicts with its brick mask");
+    }
+    if matches!(wall_phase, WallPhase::First | WallPhase::Second) && bricks == 0 {
+        return Err("state has an empty active wall");
+    }
+    if stack_head >= expected_stack.max(1) {
+        return Err("state has an invalid stack head");
+    }
     Ok(Lane {
         paddle_x,
         ball_x,
@@ -1093,6 +1187,7 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
         hud_lives,
         tick,
         layout_id,
+        wall_phase,
         pending_reset,
         last_collision,
         awaiting_fire,
@@ -1360,11 +1455,13 @@ impl NativeBreakoutVecEnv {
                                 let lane = &mut lanes[index];
                                 let mut reward = 0.0;
                                 let mut done = false;
+                                let mut refilled = false;
                                 let mut collision_events = 0i64;
                                 for _ in 0..frame_skip {
-                                    let (step_reward, step_done) =
+                                    let (step_reward, step_done, step_refilled) =
                                         step_native(lane, actions[index]);
                                     reward += step_reward;
+                                    refilled |= step_refilled;
                                     collision_events |= lane.last_collision;
                                     if step_done {
                                         done = true;
@@ -1372,7 +1469,7 @@ impl NativeBreakoutVecEnv {
                                     }
                                 }
                                 lane.last_collision = collision_events;
-                                render_and_push(lane, preprocess, frame_stack);
+                                render_and_push(lane, preprocess, frame_stack, refilled);
                                 let obs_start = index * obs_per_env;
                                 write_stack(
                                     lane,
@@ -1454,7 +1551,13 @@ impl NativeBreakoutVecEnv {
         let expected = self.frame_stack * self.obs_h * self.obs_w;
         let mut base = Vec::with_capacity(states.len());
         for state in &states {
-            base.push(deserialize_lane(state, expected).map_err(PyValueError::new_err)?);
+            let lane = deserialize_lane(state, expected).map_err(PyValueError::new_err)?;
+            if lane.pending_reset {
+                return Err(PyValueError::new_err(
+                    "cannot branch from a terminal state pending reset",
+                ));
+            }
+            base.push(lane);
         }
         let count = base.len() * actions.len();
         let mut rows = (0..count)
@@ -1474,9 +1577,11 @@ impl NativeBreakoutVecEnv {
             rows.par_iter_mut()
                 .for_each(|(lane, action, total_reward, terminated)| {
                     let mut collision_events = 0i64;
+                    let mut refilled = false;
                     for _ in 0..frame_skip {
-                        let (reward, done) = step_native(lane, *action);
+                        let (reward, done, step_refilled) = step_native(lane, *action);
                         *total_reward += reward;
+                        refilled |= step_refilled;
                         collision_events |= lane.last_collision;
                         if done {
                             *terminated = true;
@@ -1484,7 +1589,7 @@ impl NativeBreakoutVecEnv {
                         }
                     }
                     lane.last_collision = collision_events;
-                    render_and_push(lane, preprocess, frame_stack);
+                    render_and_push(lane, preprocess, frame_stack, refilled);
                 })
         });
         let mut next_states = Vec::with_capacity(count);
@@ -1536,8 +1641,16 @@ impl NativeBreakoutVecEnv {
         target.ball_vx = ball_vx;
         target.ball_vy = ball_vy;
         target.bricks = bricks;
+        target.score = 0;
+        target.hud_score = 0;
         target.tick = 36;
         target.lives = lives;
+        target.hud_lives = lives;
+        target.wall_phase = if bricks == 0 {
+            WallPhase::FirstCleared
+        } else {
+            WallPhase::First
+        };
         target.pending_reset = false;
         target.last_collision = 0;
         target.awaiting_fire = false;
@@ -1545,7 +1658,7 @@ impl NativeBreakoutVecEnv {
         target.breakthrough = false;
         target.narrow_paddle = false;
         target.brick_contact = false;
-        render_and_push(target, &self.preprocess, self.frame_stack);
+        render_and_push(target, &self.preprocess, self.frame_stack, false);
         let source_slot = (target.stack_head + self.frame_stack - 1) % self.frame_stack;
         let plane = self.obs_h * self.obs_w;
         if source_slot != 0 {
@@ -1684,7 +1797,7 @@ mod parity_tests {
         lane.ball_vy = FP;
         lane.collision_latches = 1;
 
-        let (reward, done) = step_native(&mut lane, 0);
+        let (reward, done, _) = step_native(&mut lane, 0);
         assert_eq!(reward, 7.0);
         assert!(!done);
         assert!(lane.breakthrough);
@@ -1724,7 +1837,7 @@ mod parity_tests {
         assert_eq!(raster_collision_latches(&lane) & 1, 1);
 
         lane.collision_latches = 1;
-        let (reward, _) = step_native(&mut lane, 0);
+        let (reward, _, _) = step_native(&mut lane, 0);
         assert_eq!(reward, 0.0);
         assert_eq!(lane.bricks.count_ones(), 1);
     }
@@ -1796,13 +1909,138 @@ mod parity_tests {
         let mut lane = active_lane();
         lane.breakthrough = true;
         lane.narrow_paddle = true;
+        lane.wall_phase = WallPhase::Second;
         lane.stack = vec![1, 2, 3];
         let encoded = serialize_lane(&lane);
-        assert_eq!(&encoded[..4], b"BTO9");
+        assert_eq!(&encoded[..5], b"BTO10");
 
         let decoded = deserialize_lane(&encoded, 3).unwrap();
         assert!(decoded.breakthrough);
         assert!(decoded.narrow_paddle);
+        assert_eq!(decoded.wall_phase, WallPhase::Second);
         assert_eq!(decoded.stack, vec![1, 2, 3]);
+    }
+
+    fn clear_last_bottom_brick(lane: &mut Lane) -> (f32, bool, bool) {
+        lane.bricks = 1u128 << (5 * BRICK_COLS);
+        lane.ball_x = 8 * FP;
+        lane.ball_y = 89 * FP;
+        lane.ball_vy = -FP;
+        lane.collision_latches = 1;
+        lane.brick_contact = false;
+        step_native(lane, 0)
+    }
+
+    #[test]
+    fn cartridge_has_two_walls_max_score_864_and_lives_only_termination() {
+        assert_eq!(FULL_WALL_SCORE, 432);
+        assert_eq!(ATARI_TOP_SCORE, 864);
+        let mut lane = active_lane();
+        lane.score = 431;
+        lane.hud_score = 431;
+
+        let (reward, done, refilled) = clear_last_bottom_brick(&mut lane);
+        assert_eq!(reward, 1.0);
+        assert!(!done);
+        assert!(!refilled);
+        assert_eq!(lane.score, 432);
+        assert_eq!(lane.wall_phase, WallPhase::FirstCleared);
+        assert_eq!(lane.bricks, 0);
+
+        lane.ball_x = lane.paddle_x + 6 * FP;
+        lane.ball_y = 187 * FP;
+        lane.ball_vy = FP;
+        lane.collision_latches = 2;
+        let (_, done, refilled) = step_native(&mut lane, 0);
+        assert!(!done);
+        assert!(!refilled);
+        assert_eq!(lane.wall_phase, WallPhase::RefillArmed);
+        assert_eq!(lane.bricks, 0);
+
+        let (_, done, refilled) = step_native(&mut lane, 0);
+        assert!(!done);
+        assert!(refilled);
+        assert_eq!(lane.wall_phase, WallPhase::Second);
+        assert_eq!(lane.bricks, FULL_BRICKS);
+
+        lane.score = 863;
+        lane.hud_score = 863;
+        let (reward, done, refilled) = clear_last_bottom_brick(&mut lane);
+        assert_eq!(reward, 1.0);
+        assert!(!done);
+        assert!(!refilled);
+        assert_eq!(lane.score, 864);
+        assert_eq!(lane.wall_phase, WallPhase::SecondCleared);
+        assert_eq!(lane.bricks, 0);
+
+        lane.ball_x = lane.paddle_x + 6 * FP;
+        lane.ball_y = 187 * FP;
+        lane.ball_vy = FP;
+        lane.collision_latches = 2;
+        let (_, done, refilled) = step_native(&mut lane, 0);
+        assert!(!done);
+        assert!(!refilled);
+        assert_eq!(lane.wall_phase, WallPhase::SecondCleared);
+        assert_eq!(lane.bricks, 0);
+        assert_eq!(lane.score, 864);
+
+        for remaining in (0..5).rev() {
+            lane.awaiting_fire = false;
+            lane.ball_y = 217 * FP;
+            let (_, done, refilled) = step_native(&mut lane, 0);
+            assert!(!refilled);
+            assert_eq!(lane.lives, remaining);
+            assert_eq!(done, remaining == 0);
+            assert_eq!(lane.wall_phase, WallPhase::SecondCleared);
+            assert_eq!(lane.bricks, 0);
+            assert_eq!(lane.score, 864);
+        }
+    }
+
+    #[test]
+    fn custom_layout_refills_its_own_mask() {
+        let mut lane = active_lane();
+        lane.layout_id = 1;
+        lane.bricks = 0;
+        lane.wall_phase = WallPhase::RefillArmed;
+        let (_, _, refilled) = step_native(&mut lane, 0);
+        assert!(refilled);
+        assert_eq!(lane.wall_phase, WallPhase::Second);
+        assert_eq!(lane.bricks, LAYOUT_MASKS[1]);
+    }
+
+    #[test]
+    fn first_clear_survives_miss_fire_wait_and_refills_after_later_paddle_return() {
+        let mut lane = active_lane();
+        lane.bricks = 0;
+        lane.score = FULL_WALL_SCORE;
+        lane.hud_score = FULL_WALL_SCORE;
+        lane.wall_phase = WallPhase::FirstCleared;
+        lane.ball_y = 217 * FP;
+
+        let (_, done, refilled) = step_native(&mut lane, 0);
+        assert!(!done);
+        assert!(!refilled);
+        assert_eq!(lane.lives, 4);
+        assert_eq!(lane.wall_phase, WallPhase::FirstCleared);
+
+        step_native(&mut lane, 0);
+        assert_eq!(lane.wall_phase, WallPhase::FirstCleared);
+        step_native(&mut lane, 1);
+        assert_eq!(lane.wall_phase, WallPhase::FirstCleared);
+
+        lane.ball_x = lane.paddle_x + 6 * FP;
+        lane.ball_y = 187 * FP;
+        lane.ball_vy = FP;
+        lane.collision_latches = 2;
+        let (_, _, refilled) = step_native(&mut lane, 0);
+        assert!(!refilled);
+        assert_eq!(lane.wall_phase, WallPhase::RefillArmed);
+        assert_eq!(lane.bricks, 0);
+
+        let (_, _, refilled) = step_native(&mut lane, 0);
+        assert!(refilled);
+        assert_eq!(lane.wall_phase, WallPhase::Second);
+        assert_eq!(lane.bricks, FULL_BRICKS);
     }
 }

@@ -37,6 +37,121 @@ def test_registered_vector_entry_point_matches_declared_spaces():
         env.close()
 
 
+def test_stable_retro_breakout_contract_is_a_drop_in_provider_surface():
+    env = BreakoutVecEnv(
+        "Breakout-Atari2600-v0",
+        state="Start",
+        scenario="scenario",
+        info="data",
+        use_restricted_actions="filtered",
+        record=False,
+        players=1,
+        inttype="stable",
+        obs_type="image",
+        render_mode="rgb_array",
+        num_envs=4,
+        num_threads=2,
+        rom_path=None,
+        obs_resize=(84, 84),
+        obs_crop=(17, 0, 0, 0),
+        obs_crop_mode="mask",
+        obs_crop_fill=0,
+        obs_grayscale=True,
+        obs_resize_algorithm="area",
+        obs_layout="chw",
+        frame_skip=4,
+        frame_stack=4,
+        maxpool_last_two=False,
+        noop_reset_max=0,
+        use_fire_reset=False,
+        sticky_action_prob=0.0,
+        reward_clip=False,
+        info_filter="all",
+        obs_copy="safe_view",
+    )
+    try:
+        assert env.game == "Breakout-Atari2600-v0"
+        assert env.state_catalog[0] == "Start"
+        assert env.single_action_space == gym.spaces.MultiBinary(8)
+        observations, infos = env.reset()
+        assert observations.shape == (4, 4, 84, 84)
+        assert infos["start_id"].tolist() == ["Start"] * 4
+        actions = np.asarray(
+            [
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1],
+                [0, 0, 0, 0, 0, 0, 1, 0],
+            ],
+            dtype=np.int8,
+        )
+        transition = env.step(actions)
+        assert env.observation_space.contains(transition[0])
+    finally:
+        env.close()
+
+
+def test_stable_retro_button_rows_match_native_actions():
+    native = BreakoutVecEnv(num_envs=4, num_threads=1, frame_skip=1)
+    compatible = BreakoutVecEnv(
+        "Breakout-Atari2600-v0",
+        use_restricted_actions="filtered",
+        num_envs=4,
+        num_threads=1,
+        frame_skip=1,
+    )
+    try:
+        native.reset()
+        compatible.reset()
+        button_actions = np.asarray(
+            [
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1],
+                [0, 0, 0, 0, 0, 0, 1, 0],
+            ],
+            dtype=np.int8,
+        )
+        expected = native.step(np.asarray([0, 1, 2, 3], dtype=np.uint8))
+        actual = compatible.step(button_actions)
+        for expected_value, actual_value in zip(expected[:4], actual[:4], strict=True):
+            np.testing.assert_array_equal(actual_value, expected_value)
+    finally:
+        native.close()
+        compatible.close()
+
+
+def test_canonical_registered_id_uses_stable_retro_action_space():
+    env = gym.make_vec("Breakout-Atari2600-v0", num_envs=2, num_threads=1)
+    try:
+        observations, infos = env.reset()
+        assert observations.shape == (2, 4, 84, 84)
+        assert infos["start_id"].tolist() == ["Start", "Start"]
+        assert env.single_action_space == gym.spaces.MultiBinary(8)
+        env.step(np.zeros((2, 8), dtype=np.int8))
+    finally:
+        env.close()
+
+
+def test_state_catalog_uses_stable_retro_catalog_indices():
+    env = BreakoutVecEnv(
+        "Breakout-Atari2600-v0",
+        state="checker",
+        state_catalog=("checker", "Start"),
+        num_envs=2,
+        num_threads=1,
+    )
+    try:
+        _, infos = env.reset(
+            options={"state_indices": np.asarray([0, 1], dtype=np.int32)}
+        )
+        assert env.state_catalog == ("checker", "Start")
+        assert infos["state"].tolist() == ["checker", "Start"]
+        assert infos["state_index"].tolist() == [0, 1]
+    finally:
+        env.close()
+
+
 def test_reset_seed_is_accepted_but_does_not_change_deterministic_start():
     env = make_env(frame_skip=1)
     try:
@@ -45,6 +160,18 @@ def test_reset_seed_is_accepted_but_does_not_change_deterministic_start():
         second_obs, _ = env.reset(seed=999)
         assert env.get_state() == first_state
         np.testing.assert_array_equal(second_obs, first_obs)
+    finally:
+        env.close()
+
+
+def test_full_wall_info_preserves_all_108_brick_bits_and_wall_progress():
+    env = make_env(frame_skip=1)
+    try:
+        _, info = env.reset()
+        low = int(info["brick_mask"][0]) & ((1 << 64) - 1)
+        high = int(info["brick_mask_high"][0])
+        assert low | (high << 64) == (1 << 108) - 1
+        assert info["walls_cleared"][0] == 0
     finally:
         env.close()
 
@@ -179,16 +306,24 @@ def test_render_matches_atari_2600_geometry_and_palette():
         ],
         dtype=np.uint8,
     )
-    np.testing.assert_array_equal(frame[17:32], np.broadcast_to(gray, frame[17:32].shape))
-    np.testing.assert_array_equal(frame[32:57, :8], np.broadcast_to(gray, frame[32:57, :8].shape))
-    np.testing.assert_array_equal(frame[32:57, 8:152], np.broadcast_to(black, frame[32:57, 8:152].shape))
+    np.testing.assert_array_equal(
+        frame[17:32], np.broadcast_to(gray, frame[17:32].shape)
+    )
+    np.testing.assert_array_equal(
+        frame[32:57, :8], np.broadcast_to(gray, frame[32:57, :8].shape)
+    )
+    np.testing.assert_array_equal(
+        frame[32:57, 8:152], np.broadcast_to(black, frame[32:57, 8:152].shape)
+    )
     # Stable Retro's first rendered frame has already cleared the first brick
     # as part of the ROM's startup animation. Every other brick is intact.
     np.testing.assert_array_equal(frame[57:63, 8:16], np.broadcast_to(black, (6, 8, 3)))
     for row, color in enumerate(row_colors):
         band = frame[57 + row * 6 : 63 + row * 6, 8:152]
         start = 8 if row == 0 else 0
-        np.testing.assert_array_equal(band[:, start:], np.broadcast_to(color, band[:, start:].shape))
+        np.testing.assert_array_equal(
+            band[:, start:], np.broadcast_to(color, band[:, start:].shape)
+        )
     five = np.zeros((10, 12, 3), dtype=np.uint8)
     five[0:2, :] = gray
     five[2:4, 0:4] = gray
@@ -270,8 +405,12 @@ def test_render_reflects_missing_bricks_and_lane_status():
     frame = env.render()
     black = np.array([0, 0, 0], dtype=np.uint8)
     red = np.array([200, 72, 72], dtype=np.uint8)
-    np.testing.assert_array_equal(frame[57:63, 8:24], np.broadcast_to(red, frame[57:63, 8:24].shape))
-    np.testing.assert_array_equal(frame[57:63, 24:32], np.broadcast_to(black, frame[57:63, 24:32].shape))
+    np.testing.assert_array_equal(
+        frame[57:63, 8:24], np.broadcast_to(red, frame[57:63, 8:24].shape)
+    )
+    np.testing.assert_array_equal(
+        frame[57:63, 24:32], np.broadcast_to(black, frame[57:63, 24:32].shape)
+    )
     assert np.any(frame[5:15, 36:80])
     assert np.any(frame[189:193, 8:152] == red)
 
@@ -309,7 +448,15 @@ def test_frame_skip_matches_repeated_native_physics():
         _, reward, _, _, repeated_info = repeated.step(actions)
         repeated_reward += reward
     np.testing.assert_array_equal(skipped_reward, repeated_reward)
-    for key in ("paddle_x", "ball_x", "ball_y", "ball_vx", "ball_vy", "brick_mask", "tick"):
+    for key in (
+        "paddle_x",
+        "ball_x",
+        "ball_y",
+        "ball_vx",
+        "ball_vy",
+        "brick_mask",
+        "tick",
+    ):
         np.testing.assert_array_equal(skipped_info[key], repeated_info[key])
 
 
@@ -383,7 +530,10 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
                 }
             )
             digest.update(observation.tobytes())
-    assert digest.hexdigest() == "36720063423e4cc9ae644861da5d08454512f6a9d222a06fdb013e308b4722cb"
+    assert (
+        digest.hexdigest()
+        == "36720063423e4cc9ae644861da5d08454512f6a9d222a06fdb013e308b4722cb"
+    )
 
 
 def test_delayed_collision_latches_reproduce_the_top_left_corner_trace():
@@ -433,7 +583,28 @@ def test_atari_digital_paddle_inertia_trace():
     for _ in range(20):
         _, _, _, _, info = env.step(np.array([2, 0, 0, 0], dtype=np.uint8))
         positions.append(int(info["paddle_x"][0] // FIXED_POINT_ONE))
-    assert positions == [26, 26, 26, 26, 26, 27, 27, 28, 30, 32, 34, 36, 38, 40, 42, 45, 47, 49, 51, 53]
+    assert positions == [
+        26,
+        26,
+        26,
+        26,
+        26,
+        27,
+        27,
+        28,
+        30,
+        32,
+        34,
+        36,
+        38,
+        40,
+        42,
+        45,
+        47,
+        49,
+        51,
+        53,
+    ]
 
 
 @pytest.mark.parametrize(
@@ -506,3 +677,4 @@ def test_board_clear_returns_only_the_score_delta_without_bonus():
     assert info["score"][0] == 7
     assert not terminated[0]
     assert info["bricks_remaining"][0] == 0
+    assert info["walls_cleared"][0] == 1

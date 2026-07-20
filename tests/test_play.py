@@ -54,6 +54,7 @@ def test_episode_stats_are_printed(capsys):
         "score": np.array([48]),
         "lives": np.array([2]),
         "bricks_remaining": np.array([0]),
+        "walls_cleared": np.array([2]),
         "tick": np.array([1234]),
     }
     _print_episode_stats(
@@ -69,7 +70,8 @@ def test_episode_stats_are_printed(capsys):
     assert "outcome=cleared" in output
     assert "score=48" in output
     assert "return=48.0" in output
-    assert "bricks_cleared=108" in output
+    assert "walls_cleared=2" in output
+    assert "bricks_remaining=0" in output
     assert "native_ticks=1234" in output
 
 
@@ -78,6 +80,10 @@ def test_hud_shows_score_lives_and_bricks():
         "score": np.array([7]),
         "lives": np.array([2]),
         "bricks_remaining": np.array([41]),
+        "walls_cleared": np.array([1]),
     }
-    assert _hud_text(info, paused=False) == "SCORE 007    LIVES 2    BRICKS 41"
+    assert (
+        _hud_text(info, paused=False)
+        == "SCORE 007    LIVES 2    WALLS 1/2    BRICKS 41"
+    )
     assert _hud_text(info, paused=True).endswith("PAUSED")

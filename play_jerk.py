@@ -44,12 +44,21 @@ def load_policy(path: Path) -> JerkPolicy:
     if layout not in _LAYOUTS:
         raise ValueError(f"policy layout must be one of {_LAYOUTS}")
     frame_skip = payload.get("frame_skip")
-    if not isinstance(frame_skip, int) or isinstance(frame_skip, bool) or frame_skip <= 0:
+    if (
+        not isinstance(frame_skip, int)
+        or isinstance(frame_skip, bool)
+        or frame_skip <= 0
+    ):
         raise ValueError("policy frame_skip must be a positive integer")
     actions = payload.get("actions")
     if not isinstance(actions, list) or not actions:
         raise ValueError("policy actions must be a non-empty list")
-    if any(not isinstance(action, int) or isinstance(action, bool) or action not in (0, 1, 2, 3) for action in actions):
+    if any(
+        not isinstance(action, int)
+        or isinstance(action, bool)
+        or action not in (0, 1, 2, 3)
+        for action in actions
+    ):
         raise ValueError(
             "every policy action must be 0 (noop), 1 (FIRE), 2 (right), or 3 (left)"
         )
@@ -69,16 +78,24 @@ def latest_policy(runs_dir: Path, *, algo: str = "jerk") -> Path:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Play a trained JERK action tape")
-    parser.add_argument("--policy", type=Path, help="policy JSON; defaults to the latest JERK run")
-    parser.add_argument("--runs-dir", type=Path, default=Path("runs"), help="artifact root")
+    parser.add_argument(
+        "--policy", type=Path, help="policy JSON; defaults to the latest JERK run"
+    )
+    parser.add_argument(
+        "--runs-dir", type=Path, default=Path("runs"), help="artifact root"
+    )
     parser.add_argument(
         "--scale",
         type=int,
         default=_DEFAULT_PLAY_SCALE,
         help=f"integer window scale (default: {_DEFAULT_PLAY_SCALE})",
     )
-    parser.add_argument("--fps", type=int, default=60, help="action-tape steps per second")
-    parser.add_argument("--loop", action="store_true", help="restart the tape after it ends")
+    parser.add_argument(
+        "--fps", type=int, default=60, help="action-tape steps per second"
+    )
+    parser.add_argument(
+        "--loop", action="store_true", help="restart the tape after it ends"
+    )
     parser.add_argument(
         "--max-frames",
         type=int,
@@ -88,9 +105,13 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int = 0) -> None:
+def run(
+    policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int = 0
+) -> None:
     if scale <= 0 or fps <= 0 or max_frames < 0:
-        raise ValueError("scale and fps must be positive; max-frames must be non-negative")
+        raise ValueError(
+            "scale and fps must be positive; max-frames must be non-negative"
+        )
 
     try:
         import pygame
@@ -150,8 +171,12 @@ def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int
             finished_after_render = False
             if running and not paused:
                 if action_index >= len(policy.actions):
+                    solved = (
+                        int(info.get("walls_cleared", np.zeros(1, dtype=np.int64))[0])
+                        == 2
+                    )
                     print(
-                        f"tape_end episode={episode} outcome=exhausted actions={action_index} "
+                        f"tape_end episode={episode} outcome={'solved' if solved else 'exhausted'} actions={action_index} "
                         f"score={int(info['score'][0])}",
                         flush=True,
                     )
@@ -205,10 +230,18 @@ def run(policy: JerkPolicy, *, scale: int, fps: int, loop: bool, max_frames: int
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        policy_path = args.policy if args.policy is not None else latest_policy(args.runs_dir)
+        policy_path = (
+            args.policy if args.policy is not None else latest_policy(args.runs_dir)
+        )
         policy = load_policy(policy_path)
         print(f"policy={policy_path}", flush=True)
-        run(policy, scale=args.scale, fps=args.fps, loop=args.loop, max_frames=args.max_frames)
+        run(
+            policy,
+            scale=args.scale,
+            fps=args.fps,
+            loop=args.loop,
+            max_frames=args.max_frames,
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     return 0

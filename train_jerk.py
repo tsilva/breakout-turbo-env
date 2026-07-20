@@ -36,12 +36,23 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train a snapshot-free JERK action tape for breakout-turbo-env."
     )
-    parser.add_argument("--layout", choices=("full", "checker", "tunnel", "sparse"), default="full")
-    parser.add_argument("--population", type=int, default=64, help="candidate action tapes per generation")
+    parser.add_argument(
+        "--layout", choices=("full", "checker", "tunnel", "sparse"), default="full"
+    )
+    parser.add_argument(
+        "--population",
+        type=int,
+        default=64,
+        help="candidate action tapes per generation",
+    )
     parser.add_argument("--generations", type=int, default=20)
-    parser.add_argument("--max-steps", type=int, default=30_000, help="maximum actions in one tape")
+    parser.add_argument(
+        "--max-steps", type=int, default=30_000, help="maximum actions in one tape"
+    )
     parser.add_argument("--frame-skip", type=int, default=1)
-    parser.add_argument("--exploration", type=float, default=0.08, help="probability of a random action")
+    parser.add_argument(
+        "--exploration", type=float, default=0.08, help="probability of a random action"
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--threads", type=int, default=None)
     parser.add_argument(
@@ -54,8 +65,15 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _validate_args(args: argparse.Namespace) -> None:
-    if args.population <= 0 or args.generations <= 0 or args.max_steps <= 0 or args.frame_skip <= 0:
-        raise ValueError("population, generations, max-steps, and frame-skip must be positive")
+    if (
+        args.population <= 0
+        or args.generations <= 0
+        or args.max_steps <= 0
+        or args.frame_skip <= 0
+    ):
+        raise ValueError(
+            "population, generations, max-steps, and frame-skip must be positive"
+        )
     if not 0.0 <= args.exploration <= 1.0:
         raise ValueError("exploration must be in [0, 1]")
 
@@ -119,7 +137,9 @@ def train_generation(
             actions[replaying] = champion[step]
 
         exploring = active & ~replaying & (rng.random(population) < exploration)
-        actions[exploring] = rng.integers(0, 4, size=int(exploring.sum()), dtype=np.uint8)
+        actions[exploring] = rng.integers(
+            0, 4, size=int(exploring.sum()), dtype=np.uint8
+        )
         # Candidate zero is a stable reference and exact champion replay.
         if step >= prefixes[0]:
             if target[0] < paddle_center[0] - FIXED_POINT_ONE:
@@ -136,7 +156,7 @@ def train_generation(
         _, step_rewards, terminated, _, infos = env.step(actions)
         rewards[active] += step_rewards[active]
 
-        newly_solved = active & (infos["bricks_remaining"] == 0)
+        newly_solved = active & (infos["walls_cleared"] == 2)
         completed = active & (terminated | newly_solved)
         if completed.any():
             final_scores[completed] = infos["score"][completed]
@@ -169,10 +189,16 @@ def train_generation(
     final_lives[unfinished] = infos["lives"][unfinished]
     end_steps[unfinished] = min(step + 1, max_steps)
 
-    # Lexicographic ranking: clearing the board, bricks cleared, return, lives,
+    # Lexicographic ranking: clearing both walls, score, return, lives,
     # then survival/tape length. This mirrors JERK's best-trajectory retention.
     ranks = [
-        (bool(solved[i]), int(final_scores[i]), float(rewards[i]), int(final_lives[i]), int(end_steps[i]))
+        (
+            bool(solved[i]),
+            int(final_scores[i]),
+            float(rewards[i]),
+            int(final_lives[i]),
+            int(end_steps[i]),
+        )
         for i in range(population)
     ]
     winner = max(range(population), key=ranks.__getitem__)
@@ -202,9 +228,11 @@ def verify(actions: list[int], *, layout: str, frame_skip: int) -> Candidate:
     used = 0
     try:
         for used, action in enumerate(actions, start=1):
-            _, reward, terminated, _, infos = env.step(np.array([action], dtype=np.uint8))
+            _, reward, terminated, _, infos = env.step(
+                np.array([action], dtype=np.uint8)
+            )
             total_reward += float(reward[0])
-            if terminated[0]:
+            if terminated[0] or infos["walls_cleared"][0] == 2:
                 break
     finally:
         env.close()
@@ -213,11 +241,13 @@ def verify(actions: list[int], *, layout: str, frame_skip: int) -> Candidate:
         score=int(infos["score"][0]),
         reward=total_reward,
         lives=int(infos["lives"][0]),
-        solved=bool(terminated[0] and infos["bricks_remaining"][0] == 0),
+        solved=bool(infos["walls_cleared"][0] == 2),
     )
 
 
-def save_policy(path: Path, candidate: Candidate, *, layout: str, frame_skip: int, seed: int) -> None:
+def save_policy(
+    path: Path, candidate: Candidate, *, layout: str, frame_skip: int, seed: int
+) -> None:
     payload = {
         "algorithm": "JERK (Just Enough Retained Knowledge)",
         "format_version": 1,
@@ -247,7 +277,9 @@ def create_run_dir(runs_dir: Path, *, algo: str = "jerk") -> Path:
         except FileExistsError:
             continue
         return run_dir
-    raise RuntimeError(f"could not allocate a timestamped run directory under {algorithm_dir}")
+    raise RuntimeError(
+        f"could not allocate a timestamped run directory under {algorithm_dir}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -291,9 +323,17 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("training produced no action tape")
     replay = verify(champion.actions, layout=args.layout, frame_skip=args.frame_skip)
     if replay.rank != champion.rank:
-        raise RuntimeError(f"deterministic replay mismatch: trained={champion.rank}, replayed={replay.rank}")
+        raise RuntimeError(
+            f"deterministic replay mismatch: trained={champion.rank}, replayed={replay.rank}"
+        )
     policy_path = run_dir / "policy.json"
-    save_policy(policy_path, replay, layout=args.layout, frame_skip=args.frame_skip, seed=args.seed)
+    save_policy(
+        policy_path,
+        replay,
+        layout=args.layout,
+        frame_skip=args.frame_skip,
+        seed=args.seed,
+    )
     print(f"saved={policy_path} verified={replay.solved}")
     return 0 if replay.solved else 2
 

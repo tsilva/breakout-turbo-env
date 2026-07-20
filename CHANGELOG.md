@@ -8,6 +8,11 @@ releases; changes will be recorded here.
 
 ### Changed
 
+- Matched the cartridge's two-wall lifecycle: delayed first-wall refill,
+  864-point maximum, permanent empty board after wall two, and lives-only
+  episode termination.
+- Added `walls_cleared` and a lossless high-word companion for the 108-bit
+  brick mask; snapshots now use the phase-aware `BTO10` format.
 - Made public `ball_y` match Stable Retro's Atari RAM value, including zero
   while waiting for FIRE, and removed the redundant public `awaiting_fire`
   info field.
