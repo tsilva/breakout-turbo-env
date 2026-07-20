@@ -58,7 +58,23 @@ obs, rewards, terminated, truncated, infos = env.step(
 done = terminated | truncated
 if done.any():
     obs, reset_infos = env.reset(options={"reset_mask": done})
+```
 
+Interesting live positions can be archived without advancing the game and
+restored into any lane of the same environment:
+
+```python
+capture_mask = np.zeros(env.num_envs, dtype=np.bool_)
+capture_mask[0] = True
+captured = env.capture_snapshots(capture_mask)
+
+restore_mask = np.zeros(env.num_envs, dtype=np.bool_)
+restore_mask[3] = True
+starts = [None] * env.num_envs
+starts[3] = captured[0]
+obs, infos = env.reset(
+    options={"reset_mask": restore_mask, "snapshots": starts},
+)
 env.close()
 ```
 
@@ -112,8 +128,9 @@ options.
   [support](SUPPORT.md), [benchmarking](docs/benchmarking.md), and
   [release validation](docs/release-validation.md) for exact boundaries.
 - The project is a `0.x` community preview. Public changes are recorded in the
-  [changelog](CHANGELOG.md); snapshots are portable only within the same
-  package version and compatible configuration.
+  [changelog](CHANGELOG.md). Serialized `get_state()` snapshots are portable
+  only within the same package version and compatible configuration; live
+  snapshot handles are session-local and intentionally not pickleable.
 
 ## Architecture
 

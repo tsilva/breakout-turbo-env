@@ -141,6 +141,7 @@ class BreakoutVecEnv(VectorEnv):
         "render_modes": ["rgb_array"],
         "render_fps": 60,
     }
+    supports_live_snapshots = True
 
     def __init__(
         self,
@@ -341,6 +342,7 @@ class BreakoutVecEnv(VectorEnv):
         self._active_state_indices = np.zeros(num_envs, dtype=np.int32)
         self._active_state_indices.setflags(write=False)
         self._last_signals = self._signal_buffers[0]
+        self._initialized = np.zeros(num_envs, dtype=np.bool_)
         self._closed = False
 
     def _next_buffers(self):
@@ -376,23 +378,54 @@ class BreakoutVecEnv(VectorEnv):
         return result
 
     def reset(self, *, seed: int | Sequence[int | None] | None = None, options=None):
-        del (
-            seed
-        )  # Reset selection is explicit; no hidden random reset distribution exists.
+        if self._closed:
+            raise RuntimeError("cannot reset a closed environment")
         options = {} if options is None else dict(options)
         mask = options.pop("reset_mask", None)
         if mask is None:
             mask = np.ones(self.num_envs, dtype=np.bool_)
-        if (
-            not isinstance(mask, np.ndarray)
-            or mask.dtype != np.bool_
-            or mask.shape != (self.num_envs,)
-        ):
-            raise TypeError(
-                f"options['reset_mask'] must be a bool NumPy array with shape ({self.num_envs},)"
+        if not isinstance(mask, np.ndarray):
+            raise TypeError("options['reset_mask'] must be a NumPy array")
+        if mask.shape != (self.num_envs,):
+            raise ValueError(
+                f"options['reset_mask'] must have shape ({self.num_envs},)"
             )
+        if mask.dtype != np.bool_:
+            raise TypeError("options['reset_mask'] must have dtype np.bool_")
         if not np.any(mask):
             raise ValueError("options['reset_mask'] must select at least one lane")
+        snapshots = options.pop("snapshots", None)
+        if snapshots is None:
+            snapshot_values: list[Any | None] = [None] * self.num_envs
+        else:
+            if isinstance(snapshots, (str, bytes, bytearray)) or not isinstance(
+                snapshots, Sequence
+            ):
+                raise TypeError("options['snapshots'] must be a lane-aligned sequence")
+            if len(snapshots) != self.num_envs:
+                raise ValueError(
+                    f"options['snapshots'] must have length {self.num_envs}"
+                )
+            snapshot_values = list(snapshots)
+        snapshot_mask = np.asarray(
+            [value is not None for value in snapshot_values], dtype=np.bool_
+        )
+        if np.any(snapshot_mask & ~mask):
+            raise ValueError("snapshots may only be supplied for selected reset lanes")
+        if np.any(snapshot_mask):
+            if seed is not None and np.isscalar(seed):
+                raise ValueError("snapshot reset lanes cannot also specify a seed")
+            if seed is not None:
+                if isinstance(seed, (str, bytes, bytearray)) or not isinstance(
+                    seed, Sequence
+                ):
+                    raise TypeError("seed must be an integer or a lane-aligned sequence")
+                if len(seed) != self.num_envs:
+                    raise ValueError(f"seed must have length {self.num_envs}")
+                if any(seed[lane] is not None for lane in np.flatnonzero(snapshot_mask)):
+                    raise ValueError("snapshot reset lanes cannot also specify a seed")
+        # Static reset seeds are accepted for Gymnasium compatibility. This
+        # deterministic provider has no random reset distribution.
         starts = options.pop("start_indices", None)
         state_indices = options.pop("state_indices", None)
         if starts is not None and state_indices is not None:
@@ -406,6 +439,10 @@ class BreakoutVecEnv(VectorEnv):
             values = np.asarray(start_ids, dtype=object)
             if values.shape != (self.num_envs,):
                 raise ValueError(f"start_ids must have shape ({self.num_envs},)")
+            if any(values[lane] is not None for lane in np.flatnonzero(snapshot_mask)):
+                raise ValueError(
+                    "snapshot reset lanes must use None for the static start selector"
+                )
             lookup = {name: index for index, name in enumerate(self.state_catalog)}
             lookup.update(
                 {
@@ -415,7 +452,7 @@ class BreakoutVecEnv(VectorEnv):
                 }
             )
             starts = np.full(self.num_envs, -1, dtype=np.int32)
-            for lane in np.flatnonzero(mask):
+            for lane in np.flatnonzero(mask & ~snapshot_mask):
                 value = values[lane]
                 if value is not None:
                     try:
@@ -424,29 +461,55 @@ class BreakoutVecEnv(VectorEnv):
                         raise ValueError(f"unknown start_id {value!r}") from exc
         elif starts is None:
             starts = np.full(self.num_envs, self._default_start_index, dtype=np.int32)
-        if (
-            not isinstance(starts, np.ndarray)
-            or starts.dtype != np.int32
-            or starts.shape != (self.num_envs,)
-        ):
-            raise TypeError(
-                f"start_indices must be an int32 NumPy array with shape ({self.num_envs},)"
+            starts[snapshot_mask] = -1
+        if not isinstance(starts, np.ndarray):
+            raise TypeError("start_indices must be a NumPy array")
+        if starts.shape != (self.num_envs,):
+            raise ValueError(f"start_indices must have shape ({self.num_envs},)")
+        if starts.dtype != np.int32:
+            raise TypeError("start_indices must have dtype np.int32")
+        if np.any(starts[snapshot_mask] != -1):
+            raise ValueError(
+                "snapshot reset lanes must use -1 for the static start selector"
             )
-        selected_starts = starts[mask]
+        static_mask = mask & ~snapshot_mask
+        selected_starts = starts[static_mask]
         if np.any((selected_starts < 0) | (selected_starts >= len(self.state_catalog))):
             raise ValueError(
                 f"selected start indices must be in [0, {len(self.state_catalog) - 1}]"
             )
         if options:
             raise ValueError(f"unsupported reset options: {sorted(options)}")
-        observations, _, _, _, signals = self._next_buffers()
+        observations, rewards, terminated, truncated, signals = self._next_buffers()
         engine_starts = np.full(self.num_envs, -1, dtype=np.int32)
-        engine_starts[mask] = self._catalog_to_engine[starts[mask]]
-        self.native.reset_into(mask, engine_starts, observations, signals)
+        engine_starts[static_mask] = self._catalog_to_engine[starts[static_mask]]
+        if snapshots is None:
+            self.native.reset_into(mask, engine_starts, observations, signals)
+        else:
+            self.native.reset_mixed_into(
+                mask, engine_starts, snapshot_values, observations, signals
+            )
+        rewards[mask] = 0.0
+        terminated[mask] = False
+        truncated[mask] = False
         writable = self._active_state_indices.flags.writeable
         self._active_state_indices.setflags(write=True)
-        self._active_state_indices[mask] = starts[mask]
+        self._active_state_indices[static_mask] = starts[static_mask]
+        if np.any(snapshot_mask):
+            engine_to_catalog = {
+                int(engine_index): catalog_index
+                for catalog_index, engine_index in enumerate(self._catalog_to_engine)
+            }
+            layout_ids = self.native.layout_ids()
+            restored_indices = np.asarray(
+                [engine_to_catalog.get(int(layout_id), -1) for layout_id in layout_ids],
+                dtype=np.int32,
+            )
+            if np.any(restored_indices[snapshot_mask] < 0):
+                raise ValueError("snapshot layout is absent from state_catalog")
+            self._active_state_indices[snapshot_mask] = restored_indices[snapshot_mask]
         self._active_state_indices.setflags(write=writable)
+        self._initialized[mask] = True
         self._last_signals = signals
         infos = self._infos(signals, mask.copy())
         start_names = np.asarray(
@@ -461,9 +524,17 @@ class BreakoutVecEnv(VectorEnv):
         infos["_start_state"] = mask.copy()
         infos["state_index"] = self._active_state_indices.copy()
         infos["_state_index"] = mask.copy()
+        start_source = np.full(self.num_envs, "environment", dtype=object)
+        start_source[snapshot_mask] = "snapshot"
+        infos["start_source"] = start_source
+        infos["_start_source"] = mask.copy()
         return self._obs(observations), infos
 
     def step(self, actions):
+        if self._closed:
+            raise RuntimeError("cannot step a closed environment")
+        if not np.all(self._initialized):
+            raise RuntimeError("all lanes must be reset before the first step")
         values = self._native_actions(actions)
         if values.shape != (self.num_envs,):
             raise ValueError(f"actions must have shape ({self.num_envs},)")
@@ -511,11 +582,30 @@ class BreakoutVecEnv(VectorEnv):
         return tuple(self.state_catalog[index] for index in self._active_state_indices)
 
     def get_state(self) -> list[bytes]:
+        if self._closed:
+            raise RuntimeError("cannot read state from a closed environment")
         return [bytes(value) for value in self.native.get_states()]
+
+    def capture_snapshots(self, mask: np.ndarray) -> tuple[Any | None, ...]:
+        if self._closed:
+            raise RuntimeError("cannot capture snapshots from a closed environment")
+        if not isinstance(mask, np.ndarray):
+            raise TypeError("mask must be a NumPy array")
+        if mask.shape != (self.num_envs,):
+            raise ValueError(f"mask must have shape ({self.num_envs},)")
+        if mask.dtype != np.bool_:
+            raise TypeError("mask must have dtype np.bool_")
+        if not np.any(mask):
+            raise ValueError("mask must select at least one lane")
+        if not np.all(self._initialized[mask]):
+            raise RuntimeError("cannot capture a lane before its initial reset")
+        return tuple(self.native.capture_snapshots(mask))
 
     def set_state(
         self, states: Sequence[bytes], reset_mask: np.ndarray | None = None
     ) -> None:
+        if self._closed:
+            raise RuntimeError("cannot restore state into a closed environment")
         if reset_mask is None:
             reset_mask = np.ones(self.num_envs, dtype=np.bool_)
         if (
@@ -526,7 +616,15 @@ class BreakoutVecEnv(VectorEnv):
             raise TypeError(
                 f"reset_mask must be a bool NumPy array with shape ({self.num_envs},)"
             )
-        self.native.set_states(list(states), reset_mask)
+        observations, rewards, terminated, truncated, signals = self._next_buffers()
+        self.native.set_states_into(
+            list(states), reset_mask, observations, signals
+        )
+        rewards[reset_mask] = 0.0
+        terminated[reset_mask] = False
+        truncated[reset_mask] = False
+        self._last_signals = signals
+        self._initialized[reset_mask] = True
         layout_ids = np.asarray(self.native.layout_ids(), dtype=np.int32)
         engine_to_catalog = {
             int(engine_index): catalog_index

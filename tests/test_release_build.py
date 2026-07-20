@@ -105,3 +105,17 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
     assert "uv python install 3.11 3.14" in workflow
     assert "sha256sum * > SHA256SUMS" in workflow
     assert "gh release create" in workflow
+
+
+def test_built_wheel_smoke_exercises_exact_live_snapshot_replay():
+    source = RELEASE_BUILD.read_text(encoding="utf-8")
+
+    for required in (
+        "__file__.startswith",
+        "supports_live_snapshots",
+        "capture_snapshots",
+        '"snapshots": [handles[0], handles[0]]',
+        'restored_infos["start_source"]',
+        "np.testing.assert_array_equal(expected, actual)",
+    ):
+        assert required in source

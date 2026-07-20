@@ -109,10 +109,43 @@ action from each snapshot and returns next states, observations, rewards,
 termination flags, signals, source indices, and actions without mutating the
 environment.
 
-Snapshots are guaranteed only for exact continuation with the same
-breakout-turbo-env version and compatible environment configuration. Their byte
-format is not a cross-version storage format. Persist the package version and
-configuration beside any saved snapshot.
+`capture_snapshots(mask)` is the faster live-archive path. It returns a
+lane-aligned tuple containing an opaque handle for each selected lane and
+`None` elsewhere. A handle is reusable and can restore any selected lane of
+the same environment, including several lanes in one reset:
+
+```python
+capture_mask = np.array([True, False, False, False])
+captured = env.capture_snapshots(capture_mask)
+
+snapshots = [captured[0], captured[0], None, None]
+reset_mask = np.array([True, True, True, False])
+state_indices = np.array([-1, -1, 0, -1], dtype=np.int32)
+obs, infos = env.reset(
+    options={
+        "reset_mask": reset_mask,
+        "snapshots": snapshots,
+        "state_indices": state_indices,
+    },
+)
+```
+
+That reset restores lanes zero and one from the same live position, resets lane
+two from catalog entry zero, and leaves lane three byte-exact. Snapshot capture
+and restoration execute no game frame, no reset no-op, and no preprocessing
+transition. Reset infos expose `start_source` as `"snapshot"` or
+`"environment"`, with the usual `_start_source` presence mask.
+
+Live handles are session-local, intentionally not pickleable, and invalid for
+another environment or after their originating environment closes. They do
+not keep the environment alive; `handle.nbytes` reports their approximate
+payload size. The caller owns snapshot selection, eviction, persistence
+metadata, and curriculum policy.
+
+Serialized `get_state()` snapshots are guaranteed only for exact continuation
+with the same breakout-turbo-env version and compatible environment
+configuration. Their byte format is not a cross-version storage format.
+Persist the package version and configuration beside any saved snapshot.
 
 `configure_lane()` is a low-level deterministic test and experiment helper. It
 requires every native state field and is not a substitute for reset or snapshot

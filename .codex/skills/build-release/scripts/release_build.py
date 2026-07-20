@@ -546,13 +546,42 @@ def smoke_wheel(args: argparse.Namespace) -> None:
             ]
         )
         code = f"""
+import numpy as np
 import {IMPORT_NAME}
 from {IMPORT_NAME} import {EXTENSION_NAME}
 assert hasattr({IMPORT_NAME}, "BreakoutVecEnv")
+assert {IMPORT_NAME}.__file__.startswith({str(environment)!r})
+assert {EXTENSION_NAME}.__file__.startswith({str(environment)!r})
 env = {IMPORT_NAME}.BreakoutVecEnv(num_envs=2, num_threads=1)
-obs, infos = env.reset()
-assert obs.shape == (2, 4, 84, 84)
-env.close()
+try:
+    assert env.supports_live_snapshots is True
+    obs, infos = env.reset()
+    assert obs.shape == (2, 4, 84, 84)
+    env.step(np.asarray([1, 0], dtype=np.uint8))
+    handles = env.capture_snapshots(
+        np.asarray([True, False], dtype=np.bool_)
+    )
+    assert handles[0] is not None
+    assert handles[0].nbytes > 0
+    assert handles[1] is None
+
+    reset_options = {{
+        "reset_mask": np.asarray([True, True], dtype=np.bool_),
+        "state_indices": np.asarray([-1, -1], dtype=np.int32),
+        "snapshots": [handles[0], handles[0]],
+    }}
+    restored, restored_infos = env.reset(options=reset_options)
+    np.testing.assert_array_equal(restored[0], restored[1])
+    assert restored_infos["start_source"].tolist() == ["snapshot", "snapshot"]
+
+    replay_actions = np.asarray([3, 3], dtype=np.uint8)
+    first = tuple(np.asarray(value).copy() for value in env.step(replay_actions)[:4])
+    env.reset(options=reset_options)
+    second = env.step(replay_actions)
+    for expected, actual in zip(first, second[:4], strict=True):
+        np.testing.assert_array_equal(expected, actual)
+finally:
+    env.close()
 print({IMPORT_NAME}.__file__)
 print({EXTENSION_NAME}.__file__)
 """

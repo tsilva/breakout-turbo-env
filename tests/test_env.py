@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import pickle
 
 import gymnasium as gym
 import numpy as np
@@ -235,6 +236,117 @@ def test_snapshot_replay_is_byte_exact():
     assert env.get_state() == first_states
     for left, right in zip(first[:4], second[:4], strict=True):
         np.testing.assert_array_equal(left, right)
+
+
+def test_live_snapshots_support_masked_capture_cross_lane_fanout_and_replay():
+    env = make_env(frame_skip=1)
+    try:
+        env.reset(
+            options={"state_indices": np.asarray([0, 1, 2, 3], dtype=np.int32)}
+        )
+        env.step(np.asarray([1, 2, 3, 0], dtype=np.uint8))
+        captured_states = env.get_state()
+        handles = env.capture_snapshots(
+            np.asarray([True, False, False, False], dtype=np.bool_)
+        )
+        assert handles[0] is not None
+        assert handles[0].nbytes > 0
+        assert handles[1:] == (None, None, None)
+        with pytest.raises(TypeError, match="cannot be pickled"):
+            pickle.dumps(handles[0])
+
+        env.step(np.asarray([2, 2, 2, 2], dtype=np.uint8))
+        unselected_before = env.get_state()[3]
+        mask = np.asarray([True, True, True, False], dtype=np.bool_)
+        starts = np.asarray([-1, 3, -1, -1], dtype=np.int32)
+        restored_obs, infos = env.reset(
+            options={
+                "reset_mask": mask,
+                "state_indices": starts,
+                "snapshots": [handles[0], None, handles[0], None],
+            }
+        )
+        restored_states = env.get_state()
+        assert restored_states[0] == captured_states[0]
+        assert restored_states[2] == captured_states[0]
+        assert restored_states[3] == unselected_before
+        np.testing.assert_array_equal(restored_obs[0], restored_obs[2])
+        assert infos["start_source"].tolist() == [
+            "snapshot",
+            "environment",
+            "snapshot",
+            "environment",
+        ]
+        np.testing.assert_array_equal(infos["_start_source"], mask)
+
+        actions = np.asarray([3, 0, 3, 0], dtype=np.uint8)
+        first = env.step(actions)
+        env.reset(
+            options={
+                "reset_mask": mask,
+                "state_indices": starts,
+                "snapshots": [handles[0], None, handles[0], None],
+            }
+        )
+        second = env.step(actions)
+        for first_value, second_value in zip(first[:4], second[:4], strict=True):
+            np.testing.assert_array_equal(first_value[mask], second_value[mask])
+    finally:
+        env.close()
+
+
+def test_live_snapshot_lifecycle_owner_and_selector_validation_are_atomic():
+    env = make_env(frame_skip=1)
+    mask = np.asarray([True, False, False, False], dtype=np.bool_)
+    with pytest.raises(RuntimeError, match="initial reset"):
+        env.capture_snapshots(mask)
+    env.reset()
+    handles = env.capture_snapshots(mask)
+    before = env.get_state()
+
+    with pytest.raises(ValueError, match="static start selector"):
+        env.reset(
+            options={
+                "reset_mask": mask,
+                "state_indices": np.asarray([0, -1, -1, -1], dtype=np.int32),
+                "snapshots": handles,
+            }
+        )
+    assert env.get_state() == before
+
+    other = make_env(frame_skip=1)
+    try:
+        other.reset()
+        other_before = other.get_state()
+        with pytest.raises(ValueError, match="different environment"):
+            other.reset(
+                options={
+                    "reset_mask": mask,
+                    "state_indices": np.full(4, -1, dtype=np.int32),
+                    "snapshots": handles,
+                }
+            )
+        assert other.get_state() == other_before
+    finally:
+        other.close()
+
+    env.close()
+    with pytest.raises(RuntimeError, match="closed environment"):
+        env.capture_snapshots(mask)
+
+
+def test_live_snapshot_mask_validation_uses_consistent_error_categories():
+    env = BreakoutVecEnv(num_envs=2)
+    try:
+        env.reset()
+        with pytest.raises(TypeError, match="NumPy array"):
+            env.capture_snapshots([True, False])
+        with pytest.raises(ValueError, match="shape"):
+            env.capture_snapshots(np.array([True], dtype=np.bool_))
+        with pytest.raises(TypeError, match="dtype"):
+            env.capture_snapshots(np.array([1, 0], dtype=np.uint8))
+    finally:
+        env.close()
 
 
 def test_branches_cover_all_actions_without_mutating_source():

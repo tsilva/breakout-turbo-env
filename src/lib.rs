@@ -2,9 +2,10 @@ use numpy::{
     PyReadonlyArray1, PyReadwriteArray1, PyReadwriteArray2, PyReadwriteArray4,
     PyUntypedArrayMethods,
 };
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use std::sync::Arc;
 
 const RAW_W: usize = 160;
 const RAW_H: usize = 210;
@@ -1107,7 +1108,11 @@ fn serialize_lane(lane: &Lane) -> Vec<u8> {
     out
 }
 
-fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static str> {
+fn deserialize_lane(
+    data: &[u8],
+    expected_stack: usize,
+    frame_stack: usize,
+) -> Result<Lane, &'static str> {
     if data.get(0..5) != Some(b"BTO10") {
         return Err("state has an invalid header");
     }
@@ -1171,7 +1176,7 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     if matches!(wall_phase, WallPhase::First | WallPhase::Second) && bricks == 0 {
         return Err("state has an empty active wall");
     }
-    if stack_head >= expected_stack.max(1) {
+    if stack_head >= frame_stack {
         return Err("state has an invalid stack head");
     }
     Ok(Lane {
@@ -1208,6 +1213,26 @@ fn deserialize_lane(data: &[u8], expected_stack: usize) -> Result<Lane, &'static
     })
 }
 
+#[pyclass(frozen, module = "breakout_turbo_env._breakout_turbo")]
+struct BreakoutLiveSnapshot {
+    owner: Arc<()>,
+    lane: Lane,
+}
+
+#[pymethods]
+impl BreakoutLiveSnapshot {
+    #[getter]
+    fn nbytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.lane.stack.capacity()
+    }
+
+    fn __reduce__(&self) -> PyResult<()> {
+        Err(PyTypeError::new_err(
+            "live snapshot handles are session-local and cannot be pickled",
+        ))
+    }
+}
+
 #[pyclass]
 struct NativeBreakoutVecEnv {
     lanes: Vec<Lane>,
@@ -1217,6 +1242,7 @@ struct NativeBreakoutVecEnv {
     frame_stack: usize,
     pool: rayon::ThreadPool,
     preprocess: Preprocess,
+    snapshot_owner: Arc<()>,
 }
 
 #[pymethods]
@@ -1332,6 +1358,7 @@ impl NativeBreakoutVecEnv {
             frame_stack,
             pool,
             preprocess,
+            snapshot_owner: Arc::new(()),
         })
     }
 
@@ -1385,6 +1412,147 @@ impl NativeBreakoutVecEnv {
                                 preprocess,
                                 frame_stack,
                             );
+                        }
+                        write_stack(lane, obs_dst, frame_stack);
+                        write_signals(lane, signal_dst);
+                    });
+            })
+        });
+        Ok(())
+    }
+
+    fn capture_snapshots(
+        &self,
+        py: Python<'_>,
+        capture_mask: PyReadonlyArray1<'_, bool>,
+    ) -> PyResult<Vec<Option<Py<BreakoutLiveSnapshot>>>> {
+        let mask = capture_mask.as_slice()?;
+        if mask.len() != self.lanes.len() {
+            return Err(PyValueError::new_err(
+                "capture_mask must have num_envs entries",
+            ));
+        }
+        if !mask.iter().any(|&selected| selected) {
+            return Err(PyValueError::new_err(
+                "capture_mask must select at least one lane",
+            ));
+        }
+        if self
+            .lanes
+            .iter()
+            .zip(mask)
+            .any(|(lane, &selected)| selected && lane.pending_reset)
+        {
+            return Err(PyRuntimeError::new_err(
+                "cannot capture a lane that is pending reset",
+            ));
+        }
+
+        self.lanes
+            .iter()
+            .zip(mask)
+            .map(|(lane, &selected)| {
+                selected
+                    .then(|| {
+                        Py::new(
+                            py,
+                            BreakoutLiveSnapshot {
+                                owner: Arc::clone(&self.snapshot_owner),
+                                lane: lane.clone(),
+                            },
+                        )
+                    })
+                    .transpose()
+            })
+            .collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reset_mixed_into(
+        &mut self,
+        py: Python<'_>,
+        reset_mask: PyReadonlyArray1<'_, bool>,
+        start_indices: PyReadonlyArray1<'_, i32>,
+        snapshots: Vec<Option<Py<BreakoutLiveSnapshot>>>,
+        mut observations: PyReadwriteArray4<'_, u8>,
+        mut signals: PyReadwriteArray2<'_, i64>,
+    ) -> PyResult<()> {
+        let mask = reset_mask.as_slice()?;
+        let starts = start_indices.as_slice()?;
+        self.validate_shapes(
+            mask.len(),
+            starts.len(),
+            observations.shape(),
+            signals.shape(),
+        )?;
+        if snapshots.len() != self.lanes.len() {
+            return Err(PyValueError::new_err(
+                "snapshots must have num_envs entries",
+            ));
+        }
+
+        let mut replacements = Vec::with_capacity(self.lanes.len());
+        for index in 0..self.lanes.len() {
+            match (mask[index], snapshots[index].as_ref()) {
+                (false, Some(_)) => {
+                    return Err(PyValueError::new_err(
+                        "snapshots may only be supplied for selected reset lanes",
+                    ));
+                }
+                (false, None) => replacements.push(None),
+                (true, Some(snapshot)) => {
+                    if starts[index] != -1 {
+                        return Err(PyValueError::new_err(
+                            "snapshot reset lanes must use the -1 start-index sentinel",
+                        ));
+                    }
+                    let snapshot = snapshot.bind(py).borrow();
+                    if !Arc::ptr_eq(&snapshot.owner, &self.snapshot_owner) {
+                        return Err(PyValueError::new_err(
+                            "snapshot belongs to a different environment instance",
+                        ));
+                    }
+                    if snapshot.lane.pending_reset {
+                        return Err(PyRuntimeError::new_err(
+                            "cannot restore a snapshot that is pending reset",
+                        ));
+                    }
+                    replacements.push(Some(snapshot.lane.clone()));
+                }
+                (true, None) => {
+                    let start = starts[index];
+                    if layout_mask(if start < 0 { 0 } else { start }).is_none() {
+                        return Err(PyValueError::new_err(
+                            "selected start_indices must be -1 or an index in [0, 4)",
+                        ));
+                    }
+                    let mut lane = self.lanes[index].clone();
+                    reset_lane(
+                        &mut lane,
+                        if start < 0 { 0 } else { start },
+                        &self.preprocess,
+                        self.frame_stack,
+                    );
+                    replacements.push(Some(lane));
+                }
+            }
+        }
+
+        let obs = observations.as_slice_mut()?;
+        let signal_data = signals.as_slice_mut()?;
+        let obs_per_env = self.frame_stack * self.obs_h * self.obs_w;
+        let frame_stack = self.frame_stack;
+        let pool = &self.pool;
+        py.detach(|| {
+            pool.install(|| {
+                self.lanes
+                    .par_iter_mut()
+                    .zip(replacements.into_par_iter())
+                    .zip(obs.par_chunks_mut(obs_per_env))
+                    .zip(signal_data.par_chunks_mut(SIGNALS))
+                    .for_each(|(((lane, replacement), obs_dst), signal_dst)| {
+                        if let Some(value) = replacement {
+                            *lane = value;
                         }
                         write_stack(lane, obs_dst, frame_stack);
                         write_signals(lane, signal_dst);
@@ -1514,7 +1682,8 @@ impl NativeBreakoutVecEnv {
         for (index, state) in states.iter().enumerate() {
             if mask[index] {
                 replacements.push(Some(
-                    deserialize_lane(state, expected).map_err(PyValueError::new_err)?,
+                    deserialize_lane(state, expected, self.frame_stack)
+                        .map_err(PyValueError::new_err)?,
                 ));
             } else {
                 replacements.push(None);
@@ -1525,6 +1694,58 @@ impl NativeBreakoutVecEnv {
                 *lane = value;
             }
         }
+        Ok(())
+    }
+
+    fn set_states_into(
+        &mut self,
+        py: Python<'_>,
+        states: Vec<Vec<u8>>,
+        reset_mask: PyReadonlyArray1<'_, bool>,
+        mut observations: PyReadwriteArray4<'_, u8>,
+        mut signals: PyReadwriteArray2<'_, i64>,
+    ) -> PyResult<()> {
+        let mask = reset_mask.as_slice()?;
+        self.validate_shapes(
+            mask.len(),
+            states.len(),
+            observations.shape(),
+            signals.shape(),
+        )?;
+        let expected = self.frame_stack * self.obs_h * self.obs_w;
+        let mut replacements = Vec::with_capacity(states.len());
+        for (index, state) in states.iter().enumerate() {
+            replacements.push(if mask[index] {
+                Some(
+                    deserialize_lane(state, expected, self.frame_stack)
+                        .map_err(PyValueError::new_err)?,
+                )
+            } else {
+                None
+            });
+        }
+
+        let obs = observations.as_slice_mut()?;
+        let signal_data = signals.as_slice_mut()?;
+        let obs_per_env = self.frame_stack * self.obs_h * self.obs_w;
+        let frame_stack = self.frame_stack;
+        let pool = &self.pool;
+        py.detach(|| {
+            pool.install(|| {
+                self.lanes
+                    .par_iter_mut()
+                    .zip(replacements.into_par_iter())
+                    .zip(obs.par_chunks_mut(obs_per_env))
+                    .zip(signal_data.par_chunks_mut(SIGNALS))
+                    .for_each(|(((lane, replacement), obs_dst), signal_dst)| {
+                        if let Some(value) = replacement {
+                            *lane = value;
+                        }
+                        write_stack(lane, obs_dst, frame_stack);
+                        write_signals(lane, signal_dst);
+                    });
+            })
+        });
         Ok(())
     }
 
@@ -1551,7 +1772,8 @@ impl NativeBreakoutVecEnv {
         let expected = self.frame_stack * self.obs_h * self.obs_w;
         let mut base = Vec::with_capacity(states.len());
         for state in &states {
-            let lane = deserialize_lane(state, expected).map_err(PyValueError::new_err)?;
+            let lane = deserialize_lane(state, expected, self.frame_stack)
+                .map_err(PyValueError::new_err)?;
             if lane.pending_reset {
                 return Err(PyValueError::new_err(
                     "cannot branch from a terminal state pending reset",
@@ -1719,6 +1941,7 @@ impl NativeBreakoutVecEnv {
 
 #[pymodule]
 fn _breakout_turbo(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<BreakoutLiveSnapshot>()?;
     module.add_class::<NativeBreakoutVecEnv>()?;
     module.add("RAW_WIDTH", RAW_W)?;
     module.add("RAW_HEIGHT", RAW_H)?;
@@ -1914,7 +2137,7 @@ mod parity_tests {
         let encoded = serialize_lane(&lane);
         assert_eq!(&encoded[..5], b"BTO10");
 
-        let decoded = deserialize_lane(&encoded, 3).unwrap();
+        let decoded = deserialize_lane(&encoded, 3, 1).unwrap();
         assert!(decoded.breakthrough);
         assert!(decoded.narrow_paddle);
         assert_eq!(decoded.wall_phase, WallPhase::Second);

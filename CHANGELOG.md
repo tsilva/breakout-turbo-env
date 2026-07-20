@@ -6,6 +6,13 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added reusable, per-lane live snapshot handles through
+  `capture_snapshots(mask)` and mixed snapshot/catalog restoration through
+  masked `reset()`, including exact cross-lane fan-out without advancing
+  emulation.
+
 ### Changed
 
 - Matched the cartridge's two-wall lifecycle: delayed first-wall refill,
