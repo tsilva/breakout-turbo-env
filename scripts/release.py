@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_HELPER = (
     REPO_ROOT / ".codex" / "skills" / "build-release" / "scripts" / "release_build.py"
 )
+RELEASE_NOTES = REPO_ROOT / "scripts" / "release_notes.py"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 
@@ -82,6 +83,28 @@ def target_version(args: argparse.Namespace) -> str:
     return version
 
 
+def previous_release_version() -> str | None:
+    try:
+        tag = capture(["git", "describe", "--tags", "--abbrev=0"])
+    except subprocess.CalledProcessError:
+        return None
+    if not tag.startswith("v"):
+        raise SystemExit(f"latest release tag must start with 'v': {tag}")
+    return tag.removeprefix("v")
+
+
+def finalize_release_notes(version: str) -> None:
+    args = [str(PYTHON), str(RELEASE_NOTES), "--version", version, "--finalize"]
+    previous_version = previous_release_version()
+    if previous_version is not None:
+        args.extend(["--previous-version", previous_version])
+    run(args)
+
+
+def validate_release_notes(version: str) -> None:
+    run([str(PYTHON), str(RELEASE_NOTES), "--version", version])
+
+
 def refresh_locks() -> None:
     env = os.environ.copy()
     env.setdefault("UV_CACHE_DIR", ".uv-cache")
@@ -122,6 +145,7 @@ def create_commit_and_tag(version: str) -> tuple[str, bool]:
             "Cargo.toml",
             "Cargo.lock",
             "CITATION.cff",
+            "CHANGELOG.md",
             "uv.lock",
         ]
     )
@@ -169,9 +193,11 @@ def main() -> None:
     ensure_clean()
     remote, branch = ensure_synced()
     version = target_version(args)
+    finalize_release_notes(version)
     helper("bump-version", "--to", version, "--write")
     refresh_locks()
     helper("check-version", "--version", version)
+    validate_release_notes(version)
     run_checks(args.skip_checks)
     tag, committed = create_commit_and_tag(version)
     push_release(remote, branch, tag)

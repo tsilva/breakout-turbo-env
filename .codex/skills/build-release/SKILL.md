@@ -12,10 +12,15 @@ visible on PyPI. The implementation lives in `scripts/release.py`, the
 
 `make release` installs the locked release environment and runs the release
 script. The script enforces a clean tree, a configured and synchronized
-upstream, an unused PyPI version, synchronized versions, lock refresh, local
-checks, release commit and tag creation, and an atomic push. The pushed tag
-triggers `.github/workflows/release.yml`, which builds, audits, and publishes
-macOS arm64 and Linux x86_64 wheels through PyPI trusted publishing.
+upstream, an unused PyPI version, non-empty human-authored release notes,
+synchronized versions, lock refresh, local checks, release commit and tag
+creation, and an atomic push. Unless an exact target section is already
+prepared, it promotes the checked-in `Unreleased` changelog section to the
+target version and date and creates a fresh `Unreleased` section. It commits
+`CHANGELOG.md` with the version and lock files. The pushed tag triggers
+`.github/workflows/release.yml`, which revalidates the release notes before it
+builds, audits, and publishes macOS arm64 and Linux x86_64 wheels through PyPI
+trusted publishing.
 
 For a new project, release the checked-in version when it is unused on PyPI.
 After that version exists, default to the next patch release. Do not manually
@@ -51,8 +56,9 @@ scripts/release.py --part major
 
 2. Let the script own the release gates. If it fails, report the exact failing
 stage and stop. Do not work around a dirty tree, unsynchronized upstream,
-existing PyPI version, version mismatch, failed check, tag collision, or push
-failure.
+existing PyPI version, missing or empty release notes, version mismatch, failed
+check, tag collision, or push failure. The script may only promote human-authored
+changelog prose; never synthesize release notes from commits.
 
 3. Capture the released tag and confirm it if necessary:
 

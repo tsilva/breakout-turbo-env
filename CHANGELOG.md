@@ -6,12 +6,23 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.3.4] - 2026-07-20
+
+### Changed
+
+- Matched Stable Retro's RGB565 luminance and resize behavior when deriving
+  grayscale policy observations from native frames.
+
+## [0.3.3] - 2026-07-20
+
 ### Added
 
 - Added reusable, per-lane live snapshot handles through
   `capture_snapshots(mask)` and mixed snapshot/catalog restoration through
   masked `reset()`, including exact cross-lane fan-out without advancing
   emulation.
+
+## [0.3.2] - 2026-07-20
 
 ### Changed
 
@@ -20,6 +31,11 @@ releases; changes will be recorded here.
   episode termination.
 - Added `walls_cleared` and a lossless high-word companion for the 108-bit
   brick mask; snapshots now use the phase-aware `BTO10` format.
+
+## [0.3.1] - 2026-07-19
+
+### Changed
+
 - Made public `ball_y` match Stable Retro's Atari RAM value, including zero
   while waiting for FIRE, and removed the redundant public `awaiting_fire`
   info field.
@@ -75,6 +91,10 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.3.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.3...v0.2.4

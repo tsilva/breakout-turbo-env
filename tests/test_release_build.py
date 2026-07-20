@@ -103,8 +103,29 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
     assert "build-sdist" in workflow
     assert "*.tar.gz" in workflow
     assert "uv python install 3.11 3.14" in workflow
-    assert "sha256sum * > SHA256SUMS" in workflow
+    assert "sha256sum ./* > SHA256SUMS" in workflow
     assert "gh release create" in workflow
+
+
+def test_release_notes_are_validated_before_pypi_publication():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    release_script = (REPO_ROOT / "scripts" / "release.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert workflow.index("Check release notes") < workflow.index(
+        "Check PyPI version is unused"
+    )
+    assert workflow.index("Check release notes") < workflow.index("Publish to PyPI")
+    assert release_script.index("finalize_release_notes(version)") < release_script.index(
+        "create_commit_and_tag(version)"
+    )
+    assert release_script.index("validate_release_notes(version)") < release_script.index(
+        "create_commit_and_tag(version)"
+    )
+    assert '"CHANGELOG.md"' in release_script
 
 
 def test_built_wheel_smoke_exercises_exact_live_snapshot_replay():
