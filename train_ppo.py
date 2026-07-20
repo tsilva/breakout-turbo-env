@@ -83,14 +83,16 @@ def _validate(args: argparse.Namespace) -> None:
 
 def features(info: dict[str, np.ndarray]) -> np.ndarray:
     """Compact Markov features from the environment's documented native signals."""
+    atari_ball_y = info["ball_y"]
+    visual_ball_y = np.where(atari_ball_y == 0, 122, atari_ball_y + 9)
     return np.stack(
         (
             (info["paddle_x"] + 8 * FIXED_POINT_ONE) / (160 * FIXED_POINT_ONE),
             info["ball_x"] / (160 * FIXED_POINT_ONE),
-            info["ball_y"] / (210 * FIXED_POINT_ONE),
+            visual_ball_y / 210,
             info["ball_vx"] / (2 * FIXED_POINT_ONE),
             info["ball_vy"] / (2 * FIXED_POINT_ONE),
-            info["awaiting_fire"],
+            atari_ball_y == 0,
         ),
         axis=1,
     ).astype(np.float32)
@@ -104,7 +106,7 @@ def tracking_actions(info: dict[str, np.ndarray]) -> np.ndarray:
         3,
         np.where(delta > FIXED_POINT_ONE, 2, 0),
     ).astype(np.int64)
-    actions[info["awaiting_fire"].astype(bool)] = 1
+    actions[info["ball_y"] == 0] = 1
     return actions
 
 
@@ -196,7 +198,7 @@ def save_policy(path: Path, model: Any, *, layout: str, frame_skip: int, seed: i
             "ball_y",
             "ball_vx",
             "ball_vy",
-            "awaiting_fire",
+            "ball_y_zero",
         ],
         "hidden_size": _HIDDEN,
         "score": result.score,

@@ -146,18 +146,17 @@ def test_all_layouts_start_hidden_and_fire_uses_the_atari_serve():
     starts = np.arange(4, dtype=np.int32)
     _, info = env.reset(options={"start_indices": starts})
     assert RAW_HEIGHT == 210
-    assert np.all(info["ball_y"] == 122 * FIXED_POINT_ONE)
+    assert np.all(info["ball_y"] == 0)
     assert np.all(info["lives"] == 5)
-    assert np.all(info["awaiting_fire"] == 1)
+    assert "awaiting_fire" not in info
     assert len(set(info["ball_vx"].tolist())) == 1
     assert len(set(info["ball_vy"].tolist())) == 1
 
     _, _, _, _, info = env.step(np.ones(4, dtype=np.uint8))
     assert np.all(info["ball_x"] == 80 * FIXED_POINT_ONE)
-    assert np.all(info["ball_y"] == 122 * FIXED_POINT_ONE)
+    assert np.all(info["ball_y"] == 113)
     assert np.all(info["ball_vx"] == FIXED_POINT_ONE)
     assert np.all(info["ball_vy"] == FIXED_POINT_ONE)
-    assert np.all(info["awaiting_fire"] == 0)
 
 
 def test_render_matches_atari_2600_geometry_and_palette():
@@ -414,12 +413,12 @@ def test_delayed_collision_latches_reproduce_the_top_left_corner_trace():
             )
         )
     assert trace == [
-        (9 * FIXED_POINT_ONE, 33 * FIXED_POINT_ONE, -FIXED_POINT_ONE, -(3 * FIXED_POINT_ONE // 2), 0),
-        (8 * FIXED_POINT_ONE, 34 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
-        (7 * FIXED_POINT_ONE, 36 * FIXED_POINT_ONE, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
-        (8 * FIXED_POINT_ONE, 37 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
-        (9 * FIXED_POINT_ONE, 39 * FIXED_POINT_ONE, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
-        (10 * FIXED_POINT_ONE, 40 * FIXED_POINT_ONE + FIXED_POINT_ONE // 2, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+        (9 * FIXED_POINT_ONE, 24, -FIXED_POINT_ONE, -(3 * FIXED_POINT_ONE // 2), 0),
+        (8 * FIXED_POINT_ONE, 25, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
+        (7 * FIXED_POINT_ONE, 27, -FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+        (8 * FIXED_POINT_ONE, 28, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 1),
+        (9 * FIXED_POINT_ONE, 30, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
+        (10 * FIXED_POINT_ONE, 31, FIXED_POINT_ONE, 3 * FIXED_POINT_ONE // 2, 0),
     ]
 
 

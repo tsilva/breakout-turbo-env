@@ -97,8 +97,10 @@ options.
 - Autoreset is disabled. Reset terminated lanes explicitly with a Boolean
   `reset_mask`; unselected lanes remain byte-exact.
 - The `full` start targets Stable Retro's native 160×210 Atari Breakout frame,
-  lifecycle, physics, raster, rewards, and collision behavior. `render()`
-  returns that RGB frame separately from policy observations.
+  lifecycle, physics, raster, rewards, collision behavior, and public trajectory
+  values. In particular, `ball_y` uses the Atari RAM convention where zero
+  means the serve is waiting for FIRE. `render()` returns the RGB frame
+  separately from policy observations.
 - Live validation requires a separately obtained lawful ROM and a sibling
   `stable-retro-turbo` checkout. No ROM, save state, or recorded reference
   frame is distributed by this project.

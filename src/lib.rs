@@ -17,6 +17,10 @@ const BRICK_ROW_POINTS: [i32; BRICK_ROWS] = [7, 7, 4, 4, 1, 1];
 const FULL_BRICKS: u128 = (1u128 << (BRICK_COLS * BRICK_ROWS)) - 1;
 const BREAKTHROUGH_VY: i32 = 27 * FP / 8;
 const SIGNALS: usize = 14;
+// The cartridge's ball-Y RAM byte is the rendered top-edge coordinate minus
+// nine and reserves zero to mean that the serve is waiting for FIRE. Keep the
+// simulation in fixed point, but expose the Atari RAM value.
+const ATARI_BALL_Y_RAM_OFFSET: i32 = -9;
 
 const COLLISION_WALL: i64 = 1;
 const COLLISION_PADDLE: i64 = 2;
@@ -920,10 +924,17 @@ fn write_stack(lane: &Lane, dst: &mut [u8], frame_stack: usize) {
     dst[tail..].copy_from_slice(&lane.stack[..split]);
 }
 
+fn atari_ball_y(lane: &Lane) -> i64 {
+    if lane.awaiting_fire {
+        return 0;
+    }
+    i64::from((lane.ball_y / FP + ATARI_BALL_Y_RAM_OFFSET).clamp(0, u8::MAX as i32))
+}
+
 fn write_signals(lane: &Lane, dst: &mut [i64]) {
     dst[0] = lane.paddle_x as i64;
     dst[1] = lane.ball_x as i64;
-    dst[2] = lane.ball_y as i64;
+    dst[2] = atari_ball_y(lane);
     dst[3] = lane.ball_vx as i64;
     dst[4] = lane.ball_vy as i64;
     dst[5] = lane.bricks as i64;
@@ -1613,6 +1624,16 @@ mod parity_tests {
         lane.awaiting_fire = false;
         lane.tick = 36;
         lane
+    }
+
+    #[test]
+    fn public_ball_y_matches_the_atari_ram_contract() {
+        let waiting = Lane::new(0);
+        assert_eq!(atari_ball_y(&waiting), 0);
+
+        let mut active = active_lane();
+        active.ball_y = 122 * FP + FP / 2;
+        assert_eq!(atari_ball_y(&active), 113);
     }
 
     #[test]

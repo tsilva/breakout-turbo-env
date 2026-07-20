@@ -112,7 +112,7 @@ def train_generation(
             3,
             np.where(target > paddle_center + FIXED_POINT_ONE, 2, 0),
         ).astype(np.uint8)
-        actions[infos["awaiting_fire"].astype(bool)] = 1
+        actions[infos["ball_y"] == 0] = 1
 
         replaying = step < prefixes
         if champion and replaying.any():
@@ -128,7 +128,7 @@ def train_generation(
                 actions[0] = 2
             else:
                 actions[0] = 0
-            if infos["awaiting_fire"][0]:
+            if infos["ball_y"][0] == 0:
                 actions[0] = 1
 
         actions[~active] = 0

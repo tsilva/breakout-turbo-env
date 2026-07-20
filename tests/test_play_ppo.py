@@ -45,8 +45,23 @@ def test_load_policy_and_choose_an_action(tmp_path):
     assert policy.action({
         "paddle_x": np.array([0]), "ball_x": np.array([0]), "ball_y": np.array([0]),
         "ball_vx": np.array([0]), "ball_vy": np.array([0]),
-        "awaiting_fire": np.array([0]),
     }).tolist() == [0]
+
+
+def test_features_derive_fire_waiting_from_atari_ball_y():
+    base = {
+        "paddle_x": np.array([0]),
+        "ball_x": np.array([0]),
+        "ball_vx": np.array([0]),
+        "ball_vy": np.array([0]),
+    }
+    waiting = train_ppo.features({**base, "ball_y": np.array([0])})
+    active = train_ppo.features({**base, "ball_y": np.array([113])})
+
+    assert waiting[0, 2] == pytest.approx(122 / 210)
+    assert active[0, 2] == pytest.approx(122 / 210)
+    assert waiting[0, 5] == 1
+    assert active[0, 5] == 0
 
 
 def test_load_policy_rejects_a_non_ppo_artifact(tmp_path):

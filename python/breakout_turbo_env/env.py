@@ -30,8 +30,11 @@ _SIGNAL_NAMES = (
     "layout_id",
     "collision_events",
     "pending_reset",
-    "awaiting_fire",
 )
+# The native kernel retains its FIRE-wait flag as private simulation state.
+# Public infos intentionally mirror the Atari cartridge contract, where
+# ``ball_y == 0`` represents that state.
+_NATIVE_SIGNAL_NAMES = (*_SIGNAL_NAMES, "_awaiting_fire")
 _START_IDS = ("full", "checker", "tunnel", "sparse")
 _ATARI_2600_NTSC_PALETTE = np.array(
     [
@@ -167,7 +170,10 @@ class BreakoutVecEnv(VectorEnv):
         self._reward_buffers = [np.empty(num_envs, dtype=np.float32) for _ in range(count)]
         self._terminated_buffers = [np.empty(num_envs, dtype=np.bool_) for _ in range(count)]
         self._truncated_buffers = [np.empty(num_envs, dtype=np.bool_) for _ in range(count)]
-        self._signal_buffers = [np.empty((num_envs, len(_SIGNAL_NAMES)), dtype=np.int64) for _ in range(count)]
+        self._signal_buffers = [
+            np.empty((num_envs, len(_NATIVE_SIGNAL_NAMES)), dtype=np.int64)
+            for _ in range(count)
+        ]
         self._buffer_index = 0
         self._active_state_indices = np.zeros(num_envs, dtype=np.int32)
         self._active_state_indices.setflags(write=False)
@@ -194,10 +200,10 @@ class BreakoutVecEnv(VectorEnv):
         if present is None:
             present = np.ones(self.num_envs, dtype=np.bool_)
         if self._info_mode == "terminal":
-            present = present & signals[:, 12].astype(bool)
+            present = present & signals[:, _NATIVE_SIGNAL_NAMES.index("pending_reset")].astype(bool)
         result: dict[str, np.ndarray] = {}
         for key in self._info_keys:
-            index = _SIGNAL_NAMES.index(key)
+            index = _NATIVE_SIGNAL_NAMES.index(key)
             result[key] = signals[:, index]
             result[f"_{key}"] = present
         return result
@@ -302,7 +308,9 @@ class BreakoutVecEnv(VectorEnv):
         count = len(states) * len(action_values)
         shape = self.single_observation_space.shape
         observations = np.frombuffer(flat_obs, dtype=np.uint8).copy().reshape((count, *shape))
-        signals = np.asarray(flat_signals, dtype=np.int64).reshape((count, len(_SIGNAL_NAMES)))
+        signals = np.asarray(flat_signals, dtype=np.int64).reshape(
+            (count, len(_NATIVE_SIGNAL_NAMES))
+        )
         return {
             "next_states": [bytes(value) for value in next_states],
             "observations": observations,

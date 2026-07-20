@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def tracking_action(info: dict[str, np.ndarray]) -> int:
-    if bool(info["awaiting_fire"][0]):
+    if int(info["ball_y"][0]) == 0:
         return 1
     ball_x = int(info["ball_x"][0]) // FIXED_POINT_ONE
     paddle_x = int(info["paddle_x"][0]) // FIXED_POINT_ONE

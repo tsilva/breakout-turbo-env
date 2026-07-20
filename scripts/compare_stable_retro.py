@@ -255,7 +255,10 @@ class StableReference:
         return int(self.env.data.lookup_value("paddle_x_probe")) - self.paddle_offset
 
     def awaiting_fire(self) -> bool:
-        return int(self.env.data.lookup_value("ball_y")) == 0
+        return self.ball_y() == 0
+
+    def ball_y(self) -> int:
+        return int(self.env.data.lookup_value("ball_y"))
 
     def score(self) -> int:
         return int(self.env.data.lookup_value("score"))
@@ -299,7 +302,7 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
             stable_point = reference.point()
             turbo_point = Point(
                 int(turbo_info["ball_x"][0] // FIXED_POINT_ONE),
-                int(turbo_info["ball_y"][0] // FIXED_POINT_ONE),
+                int(turbo_info["ball_y"][0]) - reference.y_offset,
             )
             rows.append(
                 Transition(
@@ -365,7 +368,13 @@ def compare_episode(
         turbo_score = int(turbo_info["score"][0])
         stable_lives = reference.lives()
         turbo_lives = int(turbo_info["lives"][0])
-        state_differs = stable_score != turbo_score or stable_lives != turbo_lives
+        stable_ball_y = reference.ball_y()
+        turbo_ball_y = int(turbo_info["ball_y"][0])
+        state_differs = (
+            stable_score != turbo_score
+            or stable_lives != turbo_lives
+            or stable_ball_y != turbo_ball_y
+        )
         if not (pixel_count or reward_differs or terminal_differs or state_differs):
             return None
         bbox = None
@@ -392,10 +401,12 @@ def compare_episode(
             "turbo_score": turbo_score,
             "stable_lives": stable_lives,
             "turbo_lives": turbo_lives,
+            "stable_ball_y": stable_ball_y,
+            "turbo_ball_y": turbo_ball_y,
             "stable_ball": asdict(reference.point()),
             "turbo_ball": {
                 "x": int(turbo_info["ball_x"][0] // FIXED_POINT_ONE),
-                "y": int(turbo_info["ball_y"][0] // FIXED_POINT_ONE),
+                "y": turbo_ball_y - reference.y_offset,
             },
             "turbo_velocity": {
                 "x": int(turbo_info["ball_vx"][0]),
@@ -419,7 +430,7 @@ def compare_episode(
                 direction = -1 if ball_x < paddle_x + 6 else 1 if ball_x > paddle_x + 10 else 0
             elif policy == "predictive":
                 ball_x = float(turbo_info["ball_x"][0]) / FIXED_POINT_ONE
-                ball_y = float(turbo_info["ball_y"][0]) / FIXED_POINT_ONE
+                ball_y = float(turbo_info["ball_y"][0] - reference.y_offset)
                 ball_vx = float(turbo_info["ball_vx"][0]) / FIXED_POINT_ONE
                 ball_vy = float(turbo_info["ball_vy"][0]) / FIXED_POINT_ONE
                 paddle_x = float(turbo_info["paddle_x"][0]) / FIXED_POINT_ONE

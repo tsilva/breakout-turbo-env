@@ -4,6 +4,14 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 major version is zero, documented public APIs may still change between minor
 releases; changes will be recorded here.
 
+## Unreleased
+
+### Changed
+
+- Made public `ball_y` match Stable Retro's Atari RAM value, including zero
+  while waiting for FIRE, and removed the redundant public `awaiting_fire`
+  info field.
+
 ## [0.3.0] - 2026-07-19
 
 ### Added

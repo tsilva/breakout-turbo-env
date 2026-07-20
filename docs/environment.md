@@ -77,7 +77,9 @@ accepts but does not use the seed.
 `info_filter` accepts `"all"`, `"terminal"`, `"none"`, or a mapping containing
 `mode` and `keys`. Available signals are paddle and ball coordinates and
 velocity, brick mask, score, lives, tick, remaining bricks, layout, collision
-events, pending reset, and FIRE-wait state. Gymnasium-style underscore masks
+events, and pending reset. `ball_y` matches Stable Retro's Atari RAM info value:
+it is zero while the cartridge is waiting for FIRE and uses the cartridge's
+integer coordinate while the ball is active. Gymnasium-style underscore masks
 identify which lanes contain each value.
 
 ## Snapshots and branches
