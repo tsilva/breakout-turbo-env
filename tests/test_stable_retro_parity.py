@@ -107,6 +107,120 @@ def test_native_frames_rewards_and_lifecycle_match_live_cartridge(
     assert result.exact, result.mismatch
 
 
+def test_policy_observations_match_live_cartridge(stable_reference):
+    from breakout_turbo_env import BreakoutVecEnv
+
+    def policy_frame(frame):
+        rgb565 = np.asarray(frame, dtype=np.uint16).copy()
+        rgb565[..., 0] &= 0xF8
+        rgb565[..., 1] &= 0xFC
+        rgb565[..., 2] &= 0xF8
+        grayscale = (
+            rgb565[..., 0] * 77
+            + rgb565[..., 1] * 150
+            + rgb565[..., 2] * 29
+            + 128
+        ) >> 8
+        grayscale[:17] = 0
+        resized = np.empty((84, 84), dtype=np.uint8)
+        for output_y in range(84):
+            source_y0 = output_y * 210 // 84
+            source_y1 = max((output_y + 1) * 210 // 84, source_y0 + 1)
+            for output_x in range(84):
+                source_x0 = output_x * 160 // 84
+                source_x1 = max((output_x + 1) * 160 // 84, source_x0 + 1)
+                region = grayscale[source_y0:source_y1, source_x0:source_x1]
+                resized[output_y, output_x] = (
+                    region.sum(dtype=np.uint32) // region.size
+                )
+        return resized
+
+    stable_reference.reopen()
+    stable_frame, stable_info = stable_reference.env.reset()
+    turbo = BreakoutVecEnv(
+        "Breakout-Atari2600-v0",
+        state="Start",
+        scenario="scenario",
+        info="data",
+        use_restricted_actions="filtered",
+        record=False,
+        players=1,
+        inttype="stable",
+        render_mode="rgb_array",
+        num_envs=1,
+        num_threads=1,
+        obs_resize=(84, 84),
+        obs_crop=(17, 0, 0, 0),
+        obs_crop_mode="mask",
+        obs_crop_fill=0,
+        obs_resize_algorithm="area",
+        frame_skip=4,
+        frame_stack=4,
+        maxpool_last_two=False,
+        noop_reset_max=0,
+        use_fire_reset=False,
+        sticky_action_prob=0.0,
+        obs_copy="copy",
+        obs_layout="chw",
+        obs_grayscale=True,
+        info_filter="all",
+    )
+
+    try:
+        turbo_observation, turbo_info = turbo.reset(seed=[123])
+        stable_stack = [policy_frame(stable_frame)] * 4
+        np.testing.assert_array_equal(turbo_observation[0], stable_stack)
+
+        for step in range(128):
+            if stable_reference.awaiting_fire():
+                direction = 0
+                fire = True
+            elif (step // 8) % 4 == 1:
+                direction = 1
+                fire = False
+            elif (step // 8) % 4 == 3:
+                direction = -1
+                fire = False
+            else:
+                direction = 0
+                fire = False
+            stable_action = stable_reference.action(direction, fire=fire)
+            stable_reward = 0.0
+            stable_terminated = False
+            stable_truncated = False
+            for _ in range(4):
+                (
+                    stable_frame,
+                    frame_reward,
+                    stable_terminated,
+                    stable_truncated,
+                    stable_info,
+                ) = stable_reference.env.step(stable_action)
+                stable_reward += float(frame_reward)
+                if stable_terminated or stable_truncated:
+                    break
+            stable_stack = [*stable_stack[1:], policy_frame(stable_frame)]
+
+            turbo_action = stable_action[np.newaxis, :]
+            (
+                turbo_observation,
+                turbo_reward,
+                turbo_terminated,
+                turbo_truncated,
+                turbo_info,
+            ) = turbo.step(turbo_action)
+            np.testing.assert_array_equal(turbo_observation[0], stable_stack)
+            np.testing.assert_array_equal(turbo_reward, [stable_reward])
+            np.testing.assert_array_equal(turbo_terminated, [stable_terminated])
+            np.testing.assert_array_equal(turbo_truncated, [stable_truncated])
+            for key in ("ball_y", "lives", "score"):
+                np.testing.assert_array_equal(turbo_info[key], [stable_info[key]])
+            if stable_terminated or stable_truncated:
+                break
+    finally:
+        turbo.close()
+
+
 def test_live_cartridge_has_two_walls_864_top_score_and_lives_only_done(
     stable_reference,
 ):

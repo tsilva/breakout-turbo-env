@@ -644,7 +644,7 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
             digest.update(observation.tobytes())
     assert (
         digest.hexdigest()
-        == "36720063423e4cc9ae644861da5d08454512f6a9d222a06fdb013e308b4722cb"
+        == "e2f21c86f400ab9cf1de27ccf068cfaed11d4b1aa3dccf009ba5497ffa172fd3"
     )
 
 

@@ -769,16 +769,19 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
 }
 
 fn palette_gray(index: u8) -> u8 {
+    // Stable Retro converts Stella's RGB565 channel bytes with the integer
+    // luminance formula (77R + 150G + 29B + 128) >> 8.  These are the
+    // precomputed results for the indexed palette returned by render_indexed.
     match index {
         0 => 0,
-        1 => 180,
-        2 => 255,
-        3 => 72,
-        4 => 96,
-        5 => 120,
-        6 => 144,
-        7 => 168,
-        8 => 192,
+        1 => 136,
+        2 => 111,
+        3 => 125,
+        4 => 129,
+        5 => 146,
+        6 => 124,
+        7 => 84,
+        8 => 123,
         _ => 0,
     }
 }
@@ -1283,20 +1286,14 @@ impl NativeBreakoutVecEnv {
         let rows: Vec<(usize, usize)> = (0..obs_h)
             .map(|y| {
                 let begin = y * source_h / obs_h;
-                let end = ((y + 1) * source_h)
-                    .div_ceil(obs_h)
-                    .max(begin + 1)
-                    .min(source_h);
+                let end = ((y + 1) * source_h / obs_h).max(begin + 1).min(source_h);
                 (begin, end)
             })
             .collect();
         let columns: Vec<(usize, usize)> = (0..obs_w)
             .map(|x| {
                 let begin = x * source_w / obs_w;
-                let end = ((x + 1) * source_w)
-                    .div_ceil(obs_w)
-                    .max(begin + 1)
-                    .min(source_w);
+                let end = ((x + 1) * source_w / obs_w).max(begin + 1).min(source_w);
                 (begin, end)
             })
             .collect();
@@ -1954,6 +1951,29 @@ fn _breakout_turbo(module: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod parity_tests {
     use super::*;
+
+    #[test]
+    fn policy_grayscale_matches_stable_retro_rgb565_luminance() {
+        let stella_rgb565_palette = [
+            [0_u8, 0, 0],
+            [136, 136, 136],
+            [200, 72, 72],
+            [192, 104, 56],
+            [176, 120, 48],
+            [160, 160, 40],
+            [72, 160, 72],
+            [64, 72, 200],
+            [64, 152, 128],
+        ];
+
+        for (index, [red, green, blue]) in stella_rgb565_palette.into_iter().enumerate() {
+            let expected =
+                ((u32::from(red) * 77 + u32::from(green) * 150 + u32::from(blue) * 29 + 128) >> 8)
+                    as u8;
+            assert_eq!(palette_gray(index as u8), expected);
+        }
+        assert_eq!(palette_gray(stella_rgb565_palette.len() as u8), 0);
+    }
 
     fn active_lane() -> Lane {
         let mut lane = Lane::new(0);
