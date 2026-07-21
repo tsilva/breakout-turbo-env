@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/tsilva/breakout-turbo-env"
 url: "https://pypi.org/project/breakout-turbo-env/"
 license: MIT
-version: 0.3.5
-date-released: 2026-07-20
+version: 0.4.0
+date-released: 2026-07-21
 abstract: >-
   A deterministic, fixed-point, high-throughput Breakout vector environment
   with Gymnasium-compatible lifecycle, rendering, snapshots, and branching.
