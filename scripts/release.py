@@ -151,12 +151,19 @@ def ensure_dependency_graph_unchanged(before: str) -> None:
         )
 
 
+def changed_paths() -> list[str]:
+    changed: set[str] = set()
+    for command in (
+        ["git", "diff", "--name-only"],
+        ["git", "diff", "--cached", "--name-only"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    ):
+        changed.update(filter(None, capture(command).splitlines()))
+    return sorted(changed)
+
+
 def ensure_only_release_files_changed() -> list[str]:
-    changed = [
-        line[3:]
-        for line in capture(["git", "status", "--short"]).splitlines()
-        if line
-    ]
+    changed = changed_paths()
     unexpected = sorted(set(changed) - ALLOWED_RELEASE_FILES)
     if unexpected:
         raise SystemExit(

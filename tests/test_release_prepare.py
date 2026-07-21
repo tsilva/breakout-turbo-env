@@ -62,3 +62,11 @@ def test_prepare_change_allowlist_contains_only_release_metadata():
         "pyproject.toml",
         "uv.lock",
     }
+
+
+def test_changed_paths_does_not_parse_porcelain_status_columns(monkeypatch):
+    release = release_module()
+    outputs = iter(("CHANGELOG.md\nVERSION.txt", "", ""))
+    monkeypatch.setattr(release, "capture", lambda _command: next(outputs))
+
+    assert release.changed_paths() == ["CHANGELOG.md", "VERSION.txt"]
