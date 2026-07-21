@@ -23,6 +23,8 @@ releases; changes will be recorded here.
 - Replaced tag-triggered publication with a content-addressed release
   candidate, protected manual approval, and GitHub Actions tag/release
   authority.
+- Preserved the existing PyPI Trusted Publisher identity through the
+  `.github/workflows/release.yml` publication workflow.
 - Made Python and Rust lock enforcement hermetic and replaced the Linux
   network bootstrap with a digest-pinned official maturin builder.
 - Made clean-install smoke checks compare canonical paths so macOS `/var` and

@@ -142,7 +142,7 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
         encoding="utf-8"
     )
     publish = (
-        REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+        REPO_ROOT / ".github" / "workflows" / "release.yml"
     ).read_text(encoding="utf-8")
 
     assert "build-sdist" in build
@@ -165,7 +165,7 @@ def test_release_notes_are_validated_before_pypi_publication():
         encoding="utf-8"
     )
     publish = (
-        REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+        REPO_ROOT / ".github" / "workflows" / "release.yml"
     ).read_text(encoding="utf-8")
     release_script = (REPO_ROOT / "scripts" / "release.py").read_text(
         encoding="utf-8"

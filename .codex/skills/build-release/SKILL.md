@@ -21,7 +21,7 @@ Before beginning, verify all of these controls rather than assuming them:
 - immutable GitHub Releases are enabled only after the pre-hardening evidence
   archive is verified in object-locked storage; and
 - PyPI Trusted Publishing is restricted to
-  `.github/workflows/release-publish.yml` and the `pypi` environment.
+  `.github/workflows/release.yml` and the `pypi` environment.
 
 The release path does not require a self-hosted parity runner,
 `PARITY_STABLE_RETRO_REPO`, release GitHub App secrets, or a tag ruleset.
@@ -57,7 +57,7 @@ cause in a new direct `main` commit and build a new candidate for the new SHA.
 
 ## 3. Approve and publish
 
-Dispatch `.github/workflows/release-publish.yml` with the candidate run id,
+Dispatch `.github/workflows/release.yml` with the candidate run id,
 version, and commit SHA. Inspect the candidate manifest, checksums, SBOM, and
 attestation summaries before approving the `pypi` environment deployment.
 Monitor through PyPI verification, tag creation, and GitHub Release creation.
