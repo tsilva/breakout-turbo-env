@@ -6,8 +6,8 @@
 
 breakout-turbo-env is a Python library for reinforcement-learning researchers
 and engineers who need many reproducible Breakout games behind one Gymnasium
-vector-environment API. Install it from PyPI, create `BreakoutVecEnv`, and step
-every lane with one NumPy action batch.
+vector-environment API. Add it to a uv project from PyPI, create
+`BreakoutVecEnv`, and step every lane with one NumPy action batch.
 
 Fixed-point Rust physics owns game state and parallel stepping. Python exposes
 manual reset, policy-ready observations, native rendering, exact snapshots, and
@@ -22,24 +22,26 @@ side-effect-free action branching.
 Requires Python 3.11+ on Apple-silicon macOS 11+ or x86-64 Linux with glibc
 2.28+.
 
-```bash
-pip install breakout-turbo-env
-```
-
-Install optional tools only when needed:
+Install [uv](https://docs.astral.sh/uv/), then add the library to your project:
 
 ```bash
-pip install "breakout-turbo-env[play]"   # interactive Pygame player
-pip install "breakout-turbo-env[train]"  # local PPO training with PyTorch
+uv add breakout-turbo-env
 ```
 
-To work from source, install [uv](https://docs.astral.sh/uv/) and a Rust
-toolchain, then run:
+Choose the corresponding requirement instead when you need an optional tool:
+
+```bash
+uv add "breakout-turbo-env[play]"        # interactive Pygame player
+uv add "breakout-turbo-env[train]"       # local PPO training with PyTorch
+uv add "breakout-turbo-env[play,train]"  # both optional tools
+```
+
+To work from source, also install a Rust toolchain, then run:
 
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --locked --extra dev --extra play --extra train
+uv sync --frozen --extra dev --extra play --extra train
 make develop-release
 ```
 
@@ -92,18 +94,18 @@ separate install and is not part of the core dependency set.
 ## Commands
 
 ```bash
-uv run --extra play breakout-turbo-env play       # open the player
-uv run --extra play breakout-turbo-env play --uncapped
-uv run breakout-turbo-env benchmark               # benchmark the policy path
-uv run python scripts/compare_stable_retro.py     # run live differential checks
-uv run ruff check .                               # lint Python
-uv run pytest -m "not stable_retro"               # run regular Python tests
-cargo test --locked --lib                         # run Rust tests
-make test-stable-retro                            # require live cartridge parity
-uv run python train.py jerk                       # train a deterministic action tape
-uv run --extra train python train.py ppo          # train a PPO policy
-uv run --extra play python play.py jerk           # replay the newest JERK policy
-uv run --extra play python play.py ppo            # replay the newest PPO policy
+uv run --frozen --extra play breakout-turbo-env play       # open the player
+uv run --frozen --extra play breakout-turbo-env play --uncapped
+uv run --frozen breakout-turbo-env benchmark               # benchmark the policy path
+uv run --frozen python scripts/compare_stable_retro.py     # run live differential checks
+uv run --frozen ruff check .                               # lint Python
+uv run --frozen pytest -m "not stable_retro"               # run regular Python tests
+cargo test --locked --lib                                  # run Rust tests
+make test-stable-retro                                     # require live cartridge parity
+uv run --frozen python train.py jerk                       # train a deterministic action tape
+uv run --frozen --extra train python train.py ppo          # train a PPO policy
+uv run --frozen --extra play python play.py jerk           # replay the newest JERK policy
+uv run --frozen --extra play python play.py ppo            # replay the newest PPO policy
 ```
 
 Append `--help` to the player, benchmark, training, or replay command for its
