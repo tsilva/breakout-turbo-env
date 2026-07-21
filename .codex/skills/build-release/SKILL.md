@@ -5,11 +5,11 @@ description: Prepare, build, approve, publish, and verify a breakout-turbo-env r
 
 # Build Release
 
-Use only the repository-owned release state machine. A release has four
-reviewable transitions: prepared release commit, controlled parity receipt, attested
-candidate, and approved publication. Never create or push a release tag by
-hand, never manually upload to PyPI, and never substitute a different workflow
-artifact after candidate validation.
+Use only the repository-owned release state machine. A release has three
+reviewable transitions: prepared release commit, attested candidate, and
+approved publication. Never create or push a release tag by hand, never
+manually upload to PyPI, and never substitute a different workflow artifact
+after candidate validation.
 
 ## Preconditions
 
@@ -18,17 +18,16 @@ Before beginning, verify all of these controls rather than assuming them:
 - the legacy tag-triggered `Release` workflow remains disabled;
 - the unprotected direct-push `main` workflow and the protected `pypi`
   environment match `docs/release-validation.md`;
-- the `breakout-parity` runner and `PARITY_STABLE_RETRO_REPO` variable exist;
-- `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are `pypi` environment secrets
-  for a repository-only GitHub App with metadata-read and contents-write access,
-  allowed to create `v*` tags and releases;
 - immutable GitHub Releases are enabled only after the pre-hardening evidence
   archive is verified in object-locked storage; and
 - PyPI Trusted Publishing is restricted to
   `.github/workflows/release-publish.yml` and the `pypi` environment.
 
-If any precondition is absent, stop before publication and report it. Do not
-weaken a gate to make progress.
+The release path does not require a self-hosted parity runner,
+`PARITY_STABLE_RETRO_REPO`, release GitHub App secrets, or a tag ruleset.
+
+If a retained precondition is absent, stop before publication and report it.
+Do not weaken a retained gate to make progress.
 
 ## 1. Prepare the release commit
 
@@ -45,40 +44,28 @@ version metadata. It never commits, tags, pushes, resolves dependencies, or
 publishes. Review the diff, commit it directly on `main`, and push only after
 the local checks pass.
 
-## 2. Run controlled parity
+## 2. Build the attested candidate
 
-After the release commit is pushed, capture the exact `main` SHA and the controlled
-reference checkout SHA. Dispatch `.github/workflows/parity.yml` with the SHA,
-version, and reference SHA. Monitor the run to completion. The resulting
-artifact must be named `parity-receipt-<40-character-sha>` and must contain only
-`parity-receipt.json`.
-
-Do not copy a ROM, save state, frame, trace, or parity workspace into a GitHub
-artifact or log.
-
-## 3. Build the attested candidate
-
-Dispatch `.github/workflows/release-build.yml` with that exact SHA and the
-successful parity run id. The workflow requires the SHA to remain current
-`main`, checks that the PyPI version is unused, and builds the candidate.
-Monitor it to completion and record its run id.
+After the release commit is pushed, capture the exact `main` SHA. Dispatch
+`.github/workflows/release-build.yml` with that exact SHA. The workflow requires
+the SHA to remain current `main`, checks that the PyPI version is unused, builds
+the candidate, and attests its provenance and SBOM. Monitor it to completion
+and record its run id.
 
 Do not rebuild a single artifact locally. If a build or audit fails, fix the
-cause in a new direct `main` commit, rerun parity for the new SHA, and build a
-new candidate.
+cause in a new direct `main` commit and build a new candidate for the new SHA.
 
-## 4. Approve and publish
+## 3. Approve and publish
 
 Dispatch `.github/workflows/release-publish.yml` with the candidate run id,
-version, and commit SHA. Inspect the candidate manifest, parity receipt,
-checksums, SBOM, and attestation summaries before approving the `pypi`
-environment deployment. Monitor through PyPI verification, protected tag
-creation, and GitHub Release creation.
+version, and commit SHA. Inspect the candidate manifest, checksums, SBOM, and
+attestation summaries before approving the `pypi` environment deployment.
+Monitor through PyPI verification, tag creation, and GitHub Release creation.
 
 The workflow may resume only when PyPI's complete file set is byte-identical to
 the candidate. A partial or conflicting version is a hard stop.
 
-## 5. Verify externally
+## 4. Verify externally
 
 Confirm the exact wheel and source filenames at:
 
@@ -92,6 +79,6 @@ Then verify each downloaded distribution with:
 gh attestation verify <distribution> --repo tsilva/breakout-turbo-env
 ```
 
-Confirm the `v<version>` tag resolves to the candidate SHA and the immutable
-GitHub Release contains all seven candidate files. Report the parity, candidate,
-and publish workflow URLs in the final response.
+Confirm the `v<version>` tag resolves to the candidate SHA and the GitHub
+Release contains all six candidate files. Report the candidate and publish
+workflow URLs in the final response.

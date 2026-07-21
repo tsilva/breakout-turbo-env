@@ -18,9 +18,9 @@ releases; changes will be recorded here.
 
 ### Changed
 
-- Replaced tag-triggered publication with a controlled parity receipt,
-  content-addressed release candidate, protected manual approval, and
-  dedicated GitHub App tag/release authority.
+- Replaced tag-triggered publication with a content-addressed release
+  candidate, protected manual approval, and GitHub Actions tag/release
+  authority.
 - Made Python and Rust lock enforcement hermetic and replaced the Linux
   network bootstrap with a digest-pinned official maturin builder.
 - Made clean-install smoke checks compare canonical paths so macOS `/var` and

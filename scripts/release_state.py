@@ -58,59 +58,6 @@ def expected_distribution_names(version: str) -> set[str]:
     }
 
 
-def create_parity_receipt(args: argparse.Namespace) -> None:
-    validate_identity(args.version, args.commit, args.repository)
-    stable_retro_commit = args.stable_retro_commit.lower()
-    if SHA_RE.fullmatch(stable_retro_commit) is None:
-        raise ValueError("stable-retro commit must be a full lowercase SHA")
-    receipt = {
-        "schema": SCHEMA,
-        "kind": "stable-retro-parity",
-        "state": "passed",
-        "package": PACKAGE,
-        "version": args.version,
-        "repository": args.repository,
-        "commit": args.commit,
-        "workflow": {
-            "name": "Controlled Stable Retro parity",
-            "run_id": str(args.run_id),
-            "run_attempt": str(args.run_attempt),
-        },
-        "reference": {
-            "repository": args.stable_retro_repository,
-            "commit": stable_retro_commit,
-        },
-        "restricted_assets_persisted": False,
-    }
-    write_json(args.output, receipt)
-
-
-def validate_parity_receipt(
-    receipt: dict, *, version: str, commit: str, repository: str
-) -> None:
-    expected = {
-        "schema": SCHEMA,
-        "kind": "stable-retro-parity",
-        "state": "passed",
-        "package": PACKAGE,
-        "version": version,
-        "repository": repository,
-        "commit": commit,
-        "restricted_assets_persisted": False,
-    }
-    for key, value in expected.items():
-        if receipt.get(key) != value:
-            raise ValueError(f"parity receipt {key!r} must equal {value!r}")
-    reference = receipt.get("reference")
-    if not isinstance(reference, dict) or SHA_RE.fullmatch(
-        str(reference.get("commit", ""))
-    ) is None:
-        raise ValueError("parity receipt lacks an exact reference commit")
-    workflow = receipt.get("workflow")
-    if not isinstance(workflow, dict) or not str(workflow.get("run_id", "")).isdigit():
-        raise ValueError("parity receipt lacks its workflow run id")
-
-
 def candidate_files(root: Path) -> list[Path]:
     files = [path for path in (root / "dist").iterdir() if path.is_file()]
     sbom = root / "sbom.spdx.json"
@@ -122,7 +69,6 @@ def candidate_files(root: Path) -> list[Path]:
 def validate_candidate_layout(root: Path) -> None:
     expected_root_files = {
         "SHA256SUMS",
-        "parity-receipt.json",
         "release-manifest.json",
         "sbom.spdx.json",
     }
@@ -142,16 +88,6 @@ def create_candidate(args: argparse.Namespace) -> None:
             f"candidate distributions differ: expected {sorted(expected)}, "
             f"found {sorted(distribution_names)}"
         )
-    parity = read_json(args.parity_receipt)
-    validate_parity_receipt(
-        parity,
-        version=args.version,
-        commit=args.commit,
-        repository=args.repository,
-    )
-    parity_path = root / "parity-receipt.json"
-    write_json(parity_path, parity)
-
     files = candidate_files(root)
     artifacts = [
         {
@@ -183,7 +119,6 @@ def create_candidate(args: argparse.Namespace) -> None:
             "run_id": str(args.run_id),
             "run_attempt": str(args.run_attempt),
         },
-        "parity": parity,
         "artifacts": artifacts,
         "checksums": {"path": checksums.name, "sha256": sha256(checksums)},
     }
@@ -218,15 +153,6 @@ def verify_candidate(
         raise ValueError("candidate manifest lacks builder identity")
     if run_id is not None and str(builder.get("run_id")) != str(run_id):
         raise ValueError("candidate was produced by a different workflow run")
-
-    parity = manifest.get("parity")
-    if not isinstance(parity, dict):
-        raise ValueError("candidate manifest lacks parity evidence")
-    validate_parity_receipt(
-        parity, version=version, commit=commit, repository=repository
-    )
-    if read_json(root / "parity-receipt.json") != parity:
-        raise ValueError("standalone parity receipt differs from candidate manifest")
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
@@ -328,21 +254,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
 
-    parity = commands.add_parser("parity-receipt")
-    for command in (parity,):
-        command.add_argument("--version", required=True)
-        command.add_argument("--commit", required=True)
-        command.add_argument("--repository", default=REPOSITORY)
-        command.add_argument("--run-id", required=True)
-        command.add_argument("--run-attempt", required=True)
-    parity.add_argument("--stable-retro-repository", required=True)
-    parity.add_argument("--stable-retro-commit", required=True)
-    parity.add_argument("--output", type=Path, required=True)
-    parity.set_defaults(func=create_parity_receipt)
-
     candidate = commands.add_parser("candidate")
     candidate.add_argument("--candidate", type=Path, required=True)
-    candidate.add_argument("--parity-receipt", type=Path, required=True)
     candidate.add_argument("--version", required=True)
     candidate.add_argument("--commit", required=True)
     candidate.add_argument("--repository", default=REPOSITORY)

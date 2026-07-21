@@ -153,7 +153,10 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
     assert "attest-sbom" in build
     assert "gh release create" in publish
     assert "gh-action-pypi-publish" in publish
-    assert "create-github-app-token" in publish
+    assert "contents: write" in publish
+    assert "create-github-app-token" not in publish
+    assert "RELEASE_APP_ID" not in publish
+    assert "parity_run_id" not in build
     assert "push:\n    tags:" not in build + publish
 
 

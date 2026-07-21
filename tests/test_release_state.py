@@ -21,21 +21,6 @@ def module():
     return result
 
 
-def make_receipt(release_state, path):
-    release_state.create_parity_receipt(
-        argparse.Namespace(
-            version=VERSION,
-            commit=COMMIT,
-            repository=release_state.REPOSITORY,
-            run_id="10",
-            run_attempt="1",
-            stable_retro_repository="example/stable-retro-turbo",
-            stable_retro_commit="b" * 40,
-            output=path,
-        )
-    )
-
-
 def make_candidate(tmp_path):
     release_state = module()
     root = tmp_path / "candidate"
@@ -44,8 +29,6 @@ def make_candidate(tmp_path):
     for name in release_state.expected_distribution_names(VERSION):
         (dist / name).write_bytes(name.encode())
     (root / "sbom.spdx.json").write_text('{"spdxVersion":"SPDX-2.3"}\n')
-    receipt = tmp_path / "receipt.json"
-    make_receipt(release_state, receipt)
     release_state.create_candidate(
         argparse.Namespace(
             version=VERSION,
@@ -54,13 +37,12 @@ def make_candidate(tmp_path):
             run_id="20",
             run_attempt="1",
             candidate=root,
-            parity_receipt=receipt,
         )
     )
     return release_state, root
 
 
-def test_candidate_round_trip_binds_artifacts_commit_and_parity(tmp_path):
+def test_candidate_round_trip_binds_artifacts_and_commit(tmp_path):
     release_state, root = make_candidate(tmp_path)
     manifest = release_state.verify_candidate(
         root,
@@ -70,7 +52,6 @@ def test_candidate_round_trip_binds_artifacts_commit_and_parity(tmp_path):
         run_id="20",
     )
     assert manifest["state"] == "built"
-    assert manifest["parity"]["restricted_assets_persisted"] is False
     assert len(manifest["artifacts"]) == 4
 
 
@@ -80,20 +61,6 @@ def test_candidate_verification_rejects_artifact_mutation(tmp_path):
     artifact = root / manifest["artifacts"][0]["path"]
     artifact.write_bytes(b"changed")
     with pytest.raises(ValueError, match="digest or size changed"):
-        release_state.verify_candidate(
-            root,
-            version=VERSION,
-            commit=COMMIT,
-            repository=release_state.REPOSITORY,
-        )
-
-
-def test_candidate_rejects_parity_for_another_commit(tmp_path):
-    release_state, root = make_candidate(tmp_path)
-    receipt = json.loads((root / "parity-receipt.json").read_text())
-    receipt["commit"] = "c" * 40
-    (root / "parity-receipt.json").write_text(json.dumps(receipt))
-    with pytest.raises(ValueError, match="standalone parity receipt differs"):
         release_state.verify_candidate(
             root,
             version=VERSION,
