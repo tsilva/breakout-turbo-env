@@ -18,6 +18,16 @@ skip 4, frame stack 4, safe-view output buffers, no info collection, and a
 repeating action batch. Output includes batch steps, environment steps,
 emulated frames, and observation-buffer throughput.
 
+Pass `--json` to emit a single machine-readable JSON document instead of the
+human-readable lines. It captures the full resolved workload configuration,
+every raw repeat (with elapsed time and per-repeat rates), and the mean,
+median, sample standard deviation, best rate, and throughput units — suitable
+for archiving release and research results without parsing text:
+
+```bash
+uv run breakout-turbo-env benchmark --steps 30000 --warmup 1000 --repeats 5 --threads 8 --json
+```
+
 ## Reporting results
 
 Always report:
