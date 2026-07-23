@@ -6,6 +6,8 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.4.1] - 2026-07-23
+
 ### Added
 
 - Added seeded `noop_reset_max` support for static resets, using raw emulator
@@ -128,6 +130,7 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.4.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.3...v0.3.4
