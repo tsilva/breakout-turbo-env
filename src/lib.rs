@@ -320,7 +320,13 @@ fn layout_mask(layout_id: i32) -> Option<u128> {
     }
 }
 
-fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_stack: usize) {
+fn reset_lane(
+    lane: &mut Lane,
+    layout_id: i32,
+    preprocess: &Preprocess,
+    frame_stack: usize,
+    noop_count: u32,
+) {
     lane.paddle_x = 115 * FP;
     lane.ball_x = 80 * FP;
     lane.ball_y = 122 * FP;
@@ -350,6 +356,9 @@ fn reset_lane(lane: &mut Lane, layout_id: i32, preprocess: &Preprocess, frame_st
     lane.stack.fill(0);
     lane.stack_head = 0;
     lane.visual_cache_valid = false;
+    for _ in 0..noop_count {
+        step_native(lane, 0);
+    }
     let plane = preprocess.out_h * preprocess.out_w;
     render_and_push(lane, preprocess, frame_stack, false);
     for slot in 1..frame_stack {
@@ -1341,7 +1350,7 @@ impl NativeBreakoutVecEnv {
             .map(|_| Lane::new(stack_size))
             .collect::<Vec<_>>();
         for lane in &mut lanes {
-            reset_lane(lane, 0, &preprocess, frame_stack);
+            reset_lane(lane, 0, &preprocess, frame_stack, 0);
         }
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads.max(1).min(num_envs))
@@ -1369,17 +1378,33 @@ impl NativeBreakoutVecEnv {
         py: Python<'_>,
         reset_mask: PyReadonlyArray1<'_, bool>,
         start_indices: PyReadonlyArray1<'_, i32>,
+        noop_counts: PyReadonlyArray1<'_, u32>,
         mut observations: PyReadwriteArray4<'_, u8>,
         mut signals: PyReadwriteArray2<'_, i64>,
     ) -> PyResult<()> {
         let mask = reset_mask.as_slice()?;
         let starts = start_indices.as_slice()?;
+        let noops = noop_counts.as_slice()?;
         self.validate_shapes(
             mask.len(),
             starts.len(),
             observations.shape(),
             signals.shape(),
         )?;
+        if noops.len() != self.lanes.len() {
+            return Err(PyValueError::new_err(
+                "noop_counts must have num_envs entries",
+            ));
+        }
+        if mask
+            .iter()
+            .zip(noops)
+            .any(|(&selected, &count)| !selected && count != 0)
+        {
+            return Err(PyValueError::new_err(
+                "unselected reset lanes must have zero noop_counts",
+            ));
+        }
         for (&selected, &start) in mask.iter().zip(starts) {
             if selected && layout_mask(if start < 0 { 0 } else { start }).is_none() {
                 return Err(PyValueError::new_err(
@@ -1399,20 +1424,24 @@ impl NativeBreakoutVecEnv {
                     .par_iter_mut()
                     .zip(mask.par_iter())
                     .zip(starts.par_iter())
+                    .zip(noops.par_iter())
                     .zip(obs.par_chunks_mut(obs_per_env))
                     .zip(signal_data.par_chunks_mut(SIGNALS))
-                    .for_each(|((((lane, &selected), &start), obs_dst), signal_dst)| {
-                        if selected {
-                            reset_lane(
-                                lane,
-                                if start < 0 { 0 } else { start },
-                                preprocess,
-                                frame_stack,
-                            );
-                        }
-                        write_stack(lane, obs_dst, frame_stack);
-                        write_signals(lane, signal_dst);
-                    });
+                    .for_each(
+                        |(((((lane, &selected), &start), &noop_count), obs_dst), signal_dst)| {
+                            if selected {
+                                reset_lane(
+                                    lane,
+                                    if start < 0 { 0 } else { start },
+                                    preprocess,
+                                    frame_stack,
+                                    noop_count,
+                                );
+                            }
+                            write_stack(lane, obs_dst, frame_stack);
+                            write_signals(lane, signal_dst);
+                        },
+                    );
             })
         });
         Ok(())
@@ -1470,12 +1499,14 @@ impl NativeBreakoutVecEnv {
         py: Python<'_>,
         reset_mask: PyReadonlyArray1<'_, bool>,
         start_indices: PyReadonlyArray1<'_, i32>,
+        noop_counts: PyReadonlyArray1<'_, u32>,
         snapshots: Vec<Option<Py<BreakoutLiveSnapshot>>>,
         mut observations: PyReadwriteArray4<'_, u8>,
         mut signals: PyReadwriteArray2<'_, i64>,
     ) -> PyResult<()> {
         let mask = reset_mask.as_slice()?;
         let starts = start_indices.as_slice()?;
+        let noops = noop_counts.as_slice()?;
         self.validate_shapes(
             mask.len(),
             starts.len(),
@@ -1487,6 +1518,11 @@ impl NativeBreakoutVecEnv {
                 "snapshots must have num_envs entries",
             ));
         }
+        if noops.len() != self.lanes.len() {
+            return Err(PyValueError::new_err(
+                "noop_counts must have num_envs entries",
+            ));
+        }
 
         let mut replacements = Vec::with_capacity(self.lanes.len());
         for index in 0..self.lanes.len() {
@@ -1496,8 +1532,20 @@ impl NativeBreakoutVecEnv {
                         "snapshots may only be supplied for selected reset lanes",
                     ));
                 }
-                (false, None) => replacements.push(None),
+                (false, None) => {
+                    if noops[index] != 0 {
+                        return Err(PyValueError::new_err(
+                            "unselected reset lanes must have zero noop_counts",
+                        ));
+                    }
+                    replacements.push(None)
+                }
                 (true, Some(snapshot)) => {
+                    if noops[index] != 0 {
+                        return Err(PyValueError::new_err(
+                            "snapshot reset lanes must have zero noop_counts",
+                        ));
+                    }
                     if starts[index] != -1 {
                         return Err(PyValueError::new_err(
                             "snapshot reset lanes must use the -1 start-index sentinel",
@@ -1529,6 +1577,7 @@ impl NativeBreakoutVecEnv {
                         if start < 0 { 0 } else { start },
                         &self.preprocess,
                         self.frame_stack,
+                        noops[index],
                     );
                     replacements.push(Some(lane));
                 }

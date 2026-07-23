@@ -6,6 +6,12 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added seeded `noop_reset_max` support for static resets, using raw emulator
+  frames with lane-isolated masked-reset random streams and reset info counts.
+  Automatic FIRE reset remains intentionally unavailable.
+
 ## [0.4.0] - 2026-07-21
 
 ### Added

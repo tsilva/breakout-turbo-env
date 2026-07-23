@@ -234,6 +234,59 @@ def test_policy_observations_match_live_cartridge(stable_reference):
         turbo.close()
 
 
+def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
+    from breakout_turbo_env import BreakoutVecEnv
+
+    seed = 7
+    expected_noops = int(
+        np.random.default_rng(seed).integers(1, 31, dtype=np.uint64)
+    )
+    stable_reference.reopen()
+    stable_frame, stable_info = stable_reference.env.reset()
+    noop = stable_reference.action()
+    for _ in range(expected_noops):
+        stable_frame, _, _, _, stable_info = stable_reference.env.step(noop)
+
+    turbo = BreakoutVecEnv(
+        "Breakout-Atari2600-v0",
+        state="Start",
+        scenario="scenario",
+        info="data",
+        use_restricted_actions="filtered",
+        num_envs=1,
+        num_threads=1,
+        frame_skip=4,
+        noop_reset_max=30,
+        use_fire_reset=False,
+        sticky_action_prob=0.0,
+    )
+    try:
+        _, turbo_info = turbo.reset(seed=[seed])
+        assert int(turbo_info["noop_reset_count"][0]) == expected_noops
+        np.testing.assert_array_equal(turbo.render(), stable_frame)
+        for key in ("ball_y", "lives", "score"):
+            np.testing.assert_array_equal(turbo_info[key], [stable_info[key]])
+
+        fire = stable_reference.action(fire=True)
+        stable_reward = 0.0
+        for _ in range(4):
+            stable_frame, reward, terminated, truncated, stable_info = (
+                stable_reference.env.step(fire)
+            )
+            stable_reward += float(reward)
+        _, turbo_reward, turbo_terminated, turbo_truncated, turbo_info = turbo.step(
+            fire[np.newaxis, :]
+        )
+        np.testing.assert_array_equal(turbo.render(), stable_frame)
+        np.testing.assert_array_equal(turbo_reward, [stable_reward])
+        np.testing.assert_array_equal(turbo_terminated, [terminated])
+        np.testing.assert_array_equal(turbo_truncated, [truncated])
+        for key in ("ball_y", "lives", "score"):
+            np.testing.assert_array_equal(turbo_info[key], [stable_info[key]])
+    finally:
+        turbo.close()
+
+
 def test_live_cartridge_has_two_walls_864_top_score_and_lives_only_done(
     stable_reference,
 ):

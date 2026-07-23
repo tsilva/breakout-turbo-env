@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import operator
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -117,6 +118,40 @@ def _require_fixed_option(name: str, value: Any, expected: Any) -> None:
         )
 
 
+def _nonnegative_integer(name: str, value: Any, *, maximum: int | None = None) -> int:
+    if isinstance(value, (bool, np.bool_)):
+        raise TypeError(f"{name} must be a non-negative integer")
+    try:
+        result = operator.index(value)
+    except TypeError as exc:
+        raise TypeError(f"{name} must be a non-negative integer") from exc
+    if result < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    if maximum is not None and result > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+    return result
+
+
+def _reset_seeds(
+    seed: int | Sequence[int | None] | None, num_envs: int
+) -> tuple[int | None, ...]:
+    if seed is None:
+        return (None,) * num_envs
+    if not isinstance(seed, (str, bytes, bytearray)) and np.isscalar(seed):
+        base = _nonnegative_integer("seed", seed)
+        return tuple(base + lane for lane in range(num_envs))
+    if isinstance(seed, (str, bytes, bytearray)) or not isinstance(seed, Sequence):
+        raise TypeError("seed must be an integer or a lane-aligned sequence")
+    if len(seed) != num_envs:
+        raise ValueError(f"seed must have length {num_envs}")
+    values: list[int | None] = []
+    for value in seed:
+        values.append(
+            None if value is None else _nonnegative_integer("seed entries", value)
+        )
+    return tuple(values)
+
+
 def _validate_retro_compatibility_options(
     *,
     state: str | None,
@@ -143,7 +178,9 @@ def _validate_retro_compatibility_options(
     if _enum_name(obs_type) not in {"image", "0"}:
         raise ValueError("obs_type must be 'image'")
     _require_fixed_option("rom_path", rom_path, None)
-    _require_fixed_option("noop_reset_max", noop_reset_max, 0)
+    _nonnegative_integer(
+        "noop_reset_max", noop_reset_max, maximum=np.iinfo(np.uint32).max
+    )
     _require_fixed_option("use_fire_reset", use_fire_reset, False)
     _require_fixed_option("sticky_action_prob", float(sticky_action_prob), 0.0)
     _require_fixed_option("reward_clip", reward_clip, False)
@@ -325,6 +362,9 @@ class BreakoutVecEnv(VectorEnv):
         self.num_envs = num_envs
         self.frame_skip = frame_skip
         self.frame_stack = frame_stack
+        self.noop_reset_max = _nonnegative_integer(
+            "noop_reset_max", noop_reset_max, maximum=np.iinfo(np.uint32).max
+        )
         self.obs_layout = "chw"
         self.obs_copy = obs_copy
         self.autoreset_mode = AutoresetMode.DISABLED
@@ -388,6 +428,9 @@ class BreakoutVecEnv(VectorEnv):
         self._active_state_indices.setflags(write=False)
         self._last_signals = self._signal_buffers[0]
         self._initialized = np.zeros(num_envs, dtype=np.bool_)
+        self._reset_rngs = [
+            np.random.default_rng(lane) for lane in range(self.num_envs)
+        ]
         self._closed = False
 
     def _next_buffers(self):
@@ -457,20 +500,12 @@ class BreakoutVecEnv(VectorEnv):
         )
         if np.any(snapshot_mask & ~mask):
             raise ValueError("snapshots may only be supplied for selected reset lanes")
-        if np.any(snapshot_mask):
-            if seed is not None and np.isscalar(seed):
-                raise ValueError("snapshot reset lanes cannot also specify a seed")
-            if seed is not None:
-                if isinstance(seed, (str, bytes, bytearray)) or not isinstance(
-                    seed, Sequence
-                ):
-                    raise TypeError("seed must be an integer or a lane-aligned sequence")
-                if len(seed) != self.num_envs:
-                    raise ValueError(f"seed must have length {self.num_envs}")
-                if any(seed[lane] is not None for lane in np.flatnonzero(snapshot_mask)):
-                    raise ValueError("snapshot reset lanes cannot also specify a seed")
-        # Static reset seeds are accepted for Gymnasium compatibility. This
-        # deterministic provider has no random reset distribution.
+        reset_seeds = _reset_seeds(seed, self.num_envs)
+        if any(
+            reset_seeds[lane] is not None
+            for lane in np.flatnonzero(snapshot_mask)
+        ):
+            raise ValueError("snapshot reset lanes cannot also specify a seed")
         starts = options.pop("start_indices", None)
         state_indices = options.pop("state_indices", None)
         if starts is not None and state_indices is not None:
@@ -525,15 +560,37 @@ class BreakoutVecEnv(VectorEnv):
             )
         if options:
             raise ValueError(f"unsupported reset options: {sorted(options)}")
+        noop_counts = np.zeros(self.num_envs, dtype=np.uint32)
+        next_reset_rngs = list(self._reset_rngs)
+        for lane in np.flatnonzero(static_mask):
+            lane_seed = reset_seeds[lane]
+            generator = (
+                np.random.default_rng(lane_seed)
+                if lane_seed is not None
+                else copy.deepcopy(self._reset_rngs[lane])
+            )
+            if self.noop_reset_max:
+                noop_counts[lane] = generator.integers(
+                    1, self.noop_reset_max + 1, dtype=np.uint64
+                )
+            next_reset_rngs[lane] = generator
         observations, rewards, terminated, truncated, signals = self._next_buffers()
         engine_starts = np.full(self.num_envs, -1, dtype=np.int32)
         engine_starts[static_mask] = self._catalog_to_engine[starts[static_mask]]
         if snapshots is None:
-            self.native.reset_into(mask, engine_starts, observations, signals)
+            self.native.reset_into(
+                mask, engine_starts, noop_counts, observations, signals
+            )
         else:
             self.native.reset_mixed_into(
-                mask, engine_starts, snapshot_values, observations, signals
+                mask,
+                engine_starts,
+                noop_counts,
+                snapshot_values,
+                observations,
+                signals,
             )
+        self._reset_rngs = next_reset_rngs
         rewards[mask] = 0.0
         terminated[mask] = False
         truncated[mask] = False
@@ -573,6 +630,8 @@ class BreakoutVecEnv(VectorEnv):
         start_source[snapshot_mask] = "snapshot"
         infos["start_source"] = start_source
         infos["_start_source"] = mask.copy()
+        infos["noop_reset_count"] = noop_counts
+        infos["_noop_reset_count"] = static_mask.copy()
         return self._obs(observations), infos
 
     def step(self, actions):

@@ -153,16 +153,98 @@ def test_state_catalog_uses_stable_retro_catalog_indices():
         env.close()
 
 
-def test_reset_seed_is_accepted_but_does_not_change_deterministic_start():
-    env = make_env(frame_skip=1)
+def test_seeded_noop_reset_is_reproducible_and_uses_raw_frames():
+    env = make_env(frame_skip=4, noop_reset_max=30)
     try:
-        first_obs, _ = env.reset(seed=1)
+        seeds = [1, 2, 3, 4]
+        expected = np.asarray(
+            [
+                np.random.default_rng(seed).integers(1, 31, dtype=np.uint64)
+                for seed in seeds
+            ],
+            dtype=np.uint32,
+        )
+        first_obs, first_info = env.reset(seed=seeds)
         first_state = env.get_state()
-        second_obs, _ = env.reset(seed=999)
+        second_obs, second_info = env.reset(seed=seeds)
+
         assert env.get_state() == first_state
         np.testing.assert_array_equal(second_obs, first_obs)
+        np.testing.assert_array_equal(first_info["noop_reset_count"], expected)
+        np.testing.assert_array_equal(second_info["noop_reset_count"], expected)
+        np.testing.assert_array_equal(first_info["tick"], expected)
+        assert first_info["_noop_reset_count"].all()
+        assert np.all(first_info["ball_y"] == 0)
     finally:
         env.close()
+
+
+def test_scalar_reset_seed_expands_by_lane_and_noops_change_the_fire_serve():
+    env = make_env(frame_skip=1, noop_reset_max=30)
+    try:
+        _, reset_info = env.reset(seed=7)
+        expected_counts = np.asarray(
+            [
+                np.random.default_rng(seed).integers(1, 31, dtype=np.uint64)
+                for seed in range(7, 11)
+            ],
+            dtype=np.uint32,
+        )
+        np.testing.assert_array_equal(
+            reset_info["noop_reset_count"], expected_counts
+        )
+        assert np.all(reset_info["ball_y"] == 0)
+
+        _, _, _, _, noop_info = env.step(np.zeros(4, dtype=np.uint8))
+        assert np.all(noop_info["ball_y"] == 0)
+
+        _, _, _, _, fire_info = env.step(np.ones(4, dtype=np.uint8))
+        serve_x = np.asarray([16, 78, 80, 142], dtype=np.int64)
+        expected_x = serve_x[(expected_counts.astype(np.int64) + 3) & 3]
+        np.testing.assert_array_equal(
+            fire_info["ball_x"], expected_x * FIXED_POINT_ONE
+        )
+        assert np.all(fire_info["ball_y"] == 113)
+    finally:
+        env.close()
+
+
+def test_masked_noop_resets_do_not_advance_other_lanes_random_streams():
+    left = make_env(frame_skip=1, noop_reset_max=30)
+    right = make_env(frame_skip=1, noop_reset_max=30)
+    initial_seeds = [11, 12, 13, 14]
+    lane_zero = np.asarray([True, False, False, False], dtype=np.bool_)
+    lane_one = np.asarray([False, True, False, False], dtype=np.bool_)
+    try:
+        left.reset(seed=initial_seeds)
+        right.reset(seed=initial_seeds)
+        left.reset(options={"reset_mask": lane_zero})
+
+        _, left_info = left.reset(options={"reset_mask": lane_one})
+        _, right_info = right.reset(options={"reset_mask": lane_one})
+        assert (
+            left_info["noop_reset_count"][1]
+            == right_info["noop_reset_count"][1]
+        )
+        assert left.get_state()[1] == right.get_state()[1]
+        np.testing.assert_array_equal(
+            left_info["_noop_reset_count"], lane_one
+        )
+    finally:
+        left.close()
+        right.close()
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, True])
+def test_noop_reset_max_requires_a_nonnegative_integer(value):
+    error = ValueError if value == -1 else TypeError
+    with pytest.raises(error, match="noop_reset_max"):
+        make_env(noop_reset_max=value)
+
+
+def test_fire_reset_remains_unavailable():
+    with pytest.raises(ValueError, match="use_fire_reset"):
+        make_env(use_fire_reset=True)
 
 
 def test_full_wall_info_preserves_all_108_brick_bits_and_wall_progress():

@@ -122,6 +122,10 @@ options.
   refill, and only losing all five lives terminates the episode.
 - Autoreset is disabled. Reset terminated lanes explicitly with a Boolean
   `reset_mask`; unselected lanes remain byte-exact.
+- `noop_reset_max=N` samples `1..N` seeded raw-frame noops for each static
+  reset, matching the conventional Atari reset distribution. FIRE is not
+  issued automatically: `use_fire_reset` remains unavailable and the policy
+  must start each serve.
 - The canonical `Start` state targets Stable Retro's native 160×210 Atari Breakout frame,
   lifecycle, physics, raster, rewards, collision behavior, and public trajectory
   values. In particular, `ball_y` uses the Atari RAM convention where zero

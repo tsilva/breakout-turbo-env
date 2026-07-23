@@ -111,8 +111,20 @@ The complete runnable example is
 The built-in starts are `Start`, `checker`, `tunnel`, and `sparse`. Select them
 with a lane-aligned `start_ids` object array or `start_indices` int32 array in
 the reset options. `state_indices` is also accepted for Stable Retro
-compatibility, and the legacy `full` name aliases `Start`. There is no random
-reset distribution, so `reset(seed=...)` accepts but does not use the seed.
+compatibility, and the legacy `full` name aliases `Start`.
+
+Set `noop_reset_max=N` to reproduce the conventional Atari reset distribution:
+each static lane reset samples an inclusive count from `1..N` and advances that
+many raw emulator frames with the noop action. The count is independent of
+`frame_skip`, is reported as `noop_reset_count` in reset infos, and is
+reproducible from `reset(seed=...)`. A scalar vector seed expands to
+`seed + lane_index`; lane-aligned seeds control lanes directly. Masked resets
+advance only selected lanes' random streams, and snapshot restores do not
+perform reset noops. The default `N=0` preserves the fixed initial state.
+
+`use_fire_reset` remains unavailable. Reset noops leave the cartridge waiting
+for FIRE, so the policy must still issue FIRE; the number of preceding noops
+changes the cartridge's hidden serve phase.
 
 ## Info filtering
 
