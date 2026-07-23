@@ -730,16 +730,10 @@ class BreakoutVecEnv(VectorEnv):
             raise TypeError(
                 f"reset_mask must be a bool NumPy array with shape ({self.num_envs},)"
             )
-        observations, rewards, terminated, truncated, signals = self._next_buffers()
-        self.native.set_states_into(
-            list(states), reset_mask, observations, signals
+        state_values = list(states)
+        layout_ids = np.asarray(
+            self.native.validate_states(state_values, reset_mask), dtype=np.int32
         )
-        rewards[reset_mask] = 0.0
-        terminated[reset_mask] = False
-        truncated[reset_mask] = False
-        self._last_signals = signals
-        self._initialized[reset_mask] = True
-        layout_ids = np.asarray(self.native.layout_ids(), dtype=np.int32)
         engine_to_catalog = {
             int(engine_index): catalog_index
             for catalog_index, engine_index in enumerate(self._catalog_to_engine)
@@ -750,6 +744,16 @@ class BreakoutVecEnv(VectorEnv):
         )
         if np.any(restored_indices[reset_mask] < 0):
             raise ValueError("restored state layout is absent from state_catalog")
+
+        observations, rewards, terminated, truncated, signals = self._next_buffers()
+        self.native.set_states_into(
+            state_values, reset_mask, observations, signals
+        )
+        rewards[reset_mask] = 0.0
+        terminated[reset_mask] = False
+        truncated[reset_mask] = False
+        self._last_signals = signals
+        self._initialized[reset_mask] = True
         self._active_state_indices.setflags(write=True)
         self._active_state_indices[reset_mask] = restored_indices[reset_mask]
         self._active_state_indices.setflags(write=False)

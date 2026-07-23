@@ -173,7 +173,7 @@ struct Preprocess {
     fast_area: Option<Vec<FastAreaPixel>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Lane {
     paddle_x: i32,
     ball_x: i32,
@@ -1712,6 +1712,34 @@ impl NativeBreakoutVecEnv {
         self.lanes.iter().map(serialize_lane).collect()
     }
 
+    fn validate_states(
+        &self,
+        states: Vec<Vec<u8>>,
+        reset_mask: PyReadonlyArray1<'_, bool>,
+    ) -> PyResult<Vec<i32>> {
+        let mask = reset_mask.as_slice()?;
+        if states.len() != self.lanes.len() || mask.len() != self.lanes.len() {
+            return Err(PyValueError::new_err(
+                "states and reset_mask must have num_envs entries",
+            ));
+        }
+        let expected = self.frame_stack * self.obs_h * self.obs_w;
+        self.lanes
+            .iter()
+            .zip(states)
+            .zip(mask)
+            .map(|((lane, state), &selected)| {
+                if selected {
+                    deserialize_lane(&state, expected, self.frame_stack)
+                        .map(|restored| restored.layout_id)
+                        .map_err(PyValueError::new_err)
+                } else {
+                    Ok(lane.layout_id)
+                }
+            })
+            .collect()
+    }
+
     fn set_states(
         &mut self,
         states: Vec<Vec<u8>>,
@@ -2199,18 +2227,45 @@ mod parity_tests {
     #[test]
     fn snapshot_round_trip_keeps_new_cartridge_modes() {
         let mut lane = active_lane();
+        lane.paddle_x = 61 * FP + 123;
+        lane.ball_x = 73 * FP + 456;
+        lane.ball_y = 88 * FP + 789;
+        lane.ball_vx = -2 * FP + 321;
+        lane.ball_vy = 3 * FP - 654;
+        lane.bricks = LAYOUT_MASKS[1];
+        lane.score = 417;
+        lane.hud_score = 416;
+        lane.lives = 3;
+        lane.hud_lives = 4;
+        lane.tick = 123_456;
+        lane.layout_id = 1;
         lane.breakthrough = true;
         lane.narrow_paddle = true;
         lane.wall_phase = WallPhase::Second;
-        lane.stack = vec![1, 2, 3];
+        lane.last_collision = COLLISION_WALL | COLLISION_BRICK;
+        lane.awaiting_fire = false;
+        lane.collision_latches = 3;
+        lane.collision_count = 2;
+        lane.steep_angle = false;
+        lane.brick_contact = true;
+        lane.paddle_charge = 1_337;
+        lane.paddle_repeat = 19;
+        lane.paddle_held = true;
+        lane.paddle_measure = 104;
+        lane.stack = (0..12).collect();
+        lane.stack_head = 2;
+        lane.cached_visual = VisualState::from_lane(&lane);
+        lane.visual_cache_valid = true;
         let encoded = serialize_lane(&lane);
         assert_eq!(&encoded[..5], b"BTO10");
 
-        let decoded = deserialize_lane(&encoded, 3, 1).unwrap();
-        assert!(decoded.breakthrough);
-        assert!(decoded.narrow_paddle);
-        assert_eq!(decoded.wall_phase, WallPhase::Second);
-        assert_eq!(decoded.stack, vec![1, 2, 3]);
+        let decoded = deserialize_lane(&encoded, 12, 4).unwrap();
+        let mut expected = lane;
+        // The render cache is derived from the serialized native state and is
+        // deliberately invalidated on restore.
+        expected.cached_visual = VisualState::default();
+        expected.visual_cache_valid = false;
+        assert_eq!(decoded, expected);
     }
 
     fn clear_last_bottom_brick(lane: &mut Lane) -> (f32, bool, bool) {
