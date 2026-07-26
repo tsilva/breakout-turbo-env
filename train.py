@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-_ALGORITHMS = ("jerk", "ppo")
+_ALGORITHMS = ("ppo",)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -24,10 +24,6 @@ def main(argv: list[str] | None = None) -> int:
         _parser().print_help()
         return 0
     selected = _parser().parse_args(args[:1])
-    if selected.algo == "jerk":
-        from train_jerk import main as train_jerk
-
-        return train_jerk(args[1:])
     if selected.algo == "ppo":
         from train_ppo import main as train_ppo
 

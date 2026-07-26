@@ -102,9 +102,7 @@ uv run --frozen ruff check .                               # lint Python
 uv run --frozen pytest -m "not stable_retro"               # run regular Python tests
 cargo test --locked --lib                                  # run Rust tests
 make test-stable-retro                                     # require live cartridge parity
-uv run --frozen python train.py jerk                       # train a deterministic action tape
 uv run --frozen --extra train python train.py ppo          # train a PPO policy
-uv run --frozen --extra play python play.py jerk           # replay the newest JERK policy
 uv run --frozen --extra play python play.py ppo            # replay the newest PPO policy
 ```
 

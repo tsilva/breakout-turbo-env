@@ -66,7 +66,7 @@ def test_features_derive_fire_waiting_from_atari_ball_y():
 
 def test_load_policy_rejects_a_non_ppo_artifact(tmp_path):
     path = tmp_path / "policy.npz"
-    _write_policy(path, algorithm="JERK")
+    _write_policy(path, algorithm="DQN")
     with pytest.raises(ValueError, match="PPO"):
         play_ppo.load_policy(path)
 
