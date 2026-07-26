@@ -18,7 +18,7 @@ Install [uv](https://docs.astral.sh/uv/) and a Rust toolchain, then run:
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --locked --extra dev --extra play --extra train
+uv sync --locked --extra dev --extra play
 make develop-release
 ```
 

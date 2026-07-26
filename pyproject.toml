@@ -52,9 +52,6 @@ breakout-turbo-env = "breakout_turbo_env.cli:main"
 play = [
   "pygame>=2.6,<3",
 ]
-train = [
-  "torch>=2.13,<3",
-]
 dev = [
   "maturin>=1.8,<2",
   "pytest>=9.0.3,<10",

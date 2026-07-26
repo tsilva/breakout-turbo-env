@@ -97,7 +97,7 @@ jobs:
           version: "0.11.13"
 
       - name: Install optional extras
-        run: uv sync --locked --extra dev --extra play --extra train
+        run: uv sync --locked --extra dev --extra play
 
       - name: Build native extension
         run: .venv/bin/python -m maturin develop --release --locked
@@ -106,8 +106,7 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
         run: |
-          .venv/bin/python -c "import pygame, torch; print(pygame.version.ver, torch.__version__)"
-          .venv/bin/python train.py ppo --help
+          .venv/bin/python -c "import pygame; print(pygame.version.ver)"
           .venv/bin/python -m breakout_turbo_env.play --help
 
   package:

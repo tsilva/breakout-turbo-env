@@ -31,9 +31,7 @@ uv add breakout-turbo-env
 Choose the corresponding requirement instead when you need an optional tool:
 
 ```bash
-uv add "breakout-turbo-env[play]"        # interactive Pygame player
-uv add "breakout-turbo-env[train]"       # local PPO training with PyTorch
-uv add "breakout-turbo-env[play,train]"  # both optional tools
+uv add "breakout-turbo-env[play]"  # interactive Pygame player
 ```
 
 To work from source, also install a Rust toolchain, then run:
@@ -41,7 +39,7 @@ To work from source, also install a Rust toolchain, then run:
 ```bash
 git clone https://github.com/tsilva/breakout-turbo-env.git
 cd breakout-turbo-env
-uv sync --frozen --extra dev --extra play --extra train
+uv sync --frozen --extra dev --extra play
 make develop-release
 ```
 
@@ -87,9 +85,9 @@ and branching contract is in the
 [environment documentation](docs/environment.md).
 
 Stable-Baselines3 users can wrap the already-vectorized environment with the
-optional, explicitly auto-resetting adapter in
-[`examples/sb3_manual_reset.py`](examples/sb3_manual_reset.py). SB3 remains a
-separate install and is not part of the core dependency set.
+optional, explicitly auto-resetting adapter described in the
+[environment documentation](docs/environment.md#stable-baselines3). SB3
+remains a separate install and is not part of the core dependency set.
 
 ## Commands
 
@@ -102,8 +100,6 @@ uv run --frozen ruff check .                               # lint Python
 uv run --frozen pytest -m "not stable_retro"               # run regular Python tests
 cargo test --locked --lib                                  # run Rust tests
 make test-stable-retro                                     # require live cartridge parity
-uv run --frozen --extra train python train.py ppo          # train a PPO policy
-uv run --frozen --extra play python play.py ppo            # replay the newest PPO policy
 ```
 
 Append `--help` to the player, benchmark, training, or replay command for its
