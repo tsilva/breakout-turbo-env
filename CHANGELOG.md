@@ -6,6 +6,8 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.5.0] - 2026-07-27
+
 ### Changed
 
 - Added the immutable Turbo Vector API v1 declaration for capabilities,
@@ -139,6 +141,7 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.5.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.4...v0.3.5
