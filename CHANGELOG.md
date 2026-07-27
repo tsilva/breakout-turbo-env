@@ -6,6 +6,8 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.5.1] - 2026-07-27
+
 ### Fixed
 
 - Removed stale documentation for deleted environment and reset aliases.
@@ -147,6 +149,7 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.5.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.5...v0.4.0
