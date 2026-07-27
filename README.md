@@ -79,9 +79,8 @@ env.close()
 ```
 
 Importing the package registers the Stable Retro-compatible
-`Breakout-Atari2600-v0` environment. `BreakoutTurbo-v0` remains available as a
-legacy native-action alias. The complete lifecycle, configuration, snapshot,
-and branching contract is in the
+`Breakout-Atari2600-v0` environment. The complete lifecycle, configuration,
+snapshot, and branching contract is in the
 [environment documentation](docs/environment.md).
 
 Stable-Baselines3 users can wrap the already-vectorized environment with the
@@ -125,7 +124,7 @@ options.
   values. In particular, `ball_y` uses the Atari RAM convention where zero
   means the serve is waiting for FIRE. `render()` returns lane zero's RGB frame,
   while `render_lane(index)` selects any lane, separately from policy
-  observations. The legacy start name `full` aliases `Start`.
+  observations.
 - Live validation requires a separately obtained lawful ROM and a sibling
   `stable-retro-turbo` checkout. No ROM, save state, or recorded reference
   frame is distributed by this project.

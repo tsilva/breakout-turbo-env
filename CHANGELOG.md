@@ -6,6 +6,12 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Fixed
+
+- Removed stale documentation for deleted environment and reset aliases.
+- Isolated Trusted Publishing attestations from the immutable candidate bundle
+  so post-upload verification remains idempotent.
+
 ## [0.5.0] - 2026-07-27
 
 ### Changed

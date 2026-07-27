@@ -42,8 +42,7 @@ env = gym.make_vec("Breakout-Atari2600-v0", num_envs=16, num_threads=8)
 
 The canonical constructor accepts the same explicit Breakout fields used by
 Stable Retro Turbo. Options whose semantics cannot be reproduced fail
-immediately. `BreakoutTurbo-v0` remains a legacy alias with the native action
-interface.
+immediately.
 
 ## Actions, observations, and rewards
 
@@ -105,9 +104,7 @@ adapter copies `terminal_observation` into each completed lane's info, calls
 `reset(options={"reset_mask": done})`, and leaves every other lane untouched.
 
 The built-in starts are `Start`, `checker`, `tunnel`, and `sparse`. Select them
-with a lane-aligned `start_ids` object array or `start_indices` int32 array in
-the reset options. `state_indices` is also accepted for Stable Retro
-compatibility, and the legacy `full` name aliases `Start`.
+with a lane-aligned `state_indices` int32 array in the reset options.
 
 Set `noop_reset_max=N` to reproduce the conventional Atari reset distribution:
 each static lane reset samples an inclusive count from `1..N` and advances that
