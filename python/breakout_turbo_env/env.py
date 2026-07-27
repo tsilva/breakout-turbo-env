@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import operator
 from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Any
 
 import gymnasium as gym
@@ -41,9 +42,7 @@ _SIGNAL_NAMES = (
 # ``ball_y == 0`` represents that state.
 _NATIVE_SIGNAL_NAMES = (*_SIGNAL_NAMES, "_awaiting_fire")
 _CANONICAL_GAME = "Breakout-Atari2600-v0"
-_LEGACY_GAME = "BreakoutTurbo-v0"
 _START_IDS = ("Start", "checker", "tunnel", "sparse")
-_START_ALIASES = {"full": "Start"}
 _RETRO_BUTTON_COUNT = 8
 _NATIVE_ACTION_BY_MASK = {
     0: 0,
@@ -74,23 +73,20 @@ def _enum_name(value: Any) -> str:
 
 def _normalize_game(game: str | None) -> str:
     value = _CANONICAL_GAME if game is None else str(game)
-    if value not in {_CANONICAL_GAME, _LEGACY_GAME}:
-        raise ValueError(
-            f"game must be {_CANONICAL_GAME!r}; {_LEGACY_GAME!r} is retained as a legacy alias"
-        )
+    if value != _CANONICAL_GAME:
+        raise ValueError(f"game must be {_CANONICAL_GAME!r}")
     return _CANONICAL_GAME
 
 
 def _canonical_start_id(value: Any) -> str:
-    text = str(value)
-    return _START_ALIASES.get(text, text)
+    return str(value)
 
 
 def _resolve_actions(value: Any):
     name = _enum_name(value)
-    if value is None or name in {"none", "native"}:
+    if value is None or name == "none":
         custom = resolve_custom_action("simple", tables=ACTION_TABLES)
-        return "native", None, custom
+        return "custom_discrete", "simple", custom
     if name == "filtered" or value == 1:
         return "filtered", None, None
     if name in {"all", "discrete", "multi_discrete"} or (
@@ -200,6 +196,7 @@ class BreakoutVecEnv(VectorEnv):
         "autoreset_mode": AutoresetMode.DISABLED,
         "render_modes": ["rgb_array"],
         "render_fps": 60,
+        "turbo_api_version": 1,
     }
     supports_live_snapshots = True
 
@@ -254,6 +251,7 @@ class BreakoutVecEnv(VectorEnv):
         self.action_table_hash = (
             None if custom_actions is None else custom_actions.table_hash
         )
+        self.buttons = tuple(BUTTONS)
         self.use_restricted_actions = use_restricted_actions
         self._retro_actions = action_mode == "filtered"
         self._custom_native_actions = (
@@ -367,10 +365,17 @@ class BreakoutVecEnv(VectorEnv):
         )
         self.obs_layout = "chw"
         self.obs_copy = obs_copy
+        self.observation_ownership = (
+            "owned"
+            if obs_copy == "copy"
+            else "unsafe_view" if obs_copy == "unsafe_view" else "safe_view"
+        )
+        self.observation_buffer_depth = (
+            None if obs_copy == "copy" else 1 if obs_copy == "unsafe_view" else 2
+        )
         self.autoreset_mode = AutoresetMode.DISABLED
         self.render_mode = render_mode
         self.state_catalog = configured_catalog
-        self.initial_state_names = configured_catalog
         if action_mode == "filtered":
             self.single_action_space = gym.spaces.MultiBinary(_RETRO_BUTTON_COUNT)
             self.action_space = gym.spaces.Box(
@@ -394,6 +399,7 @@ class BreakoutVecEnv(VectorEnv):
         threads = num_envs if num_threads is None else int(num_threads)
         if threads <= 0:
             raise ValueError("num_threads must be positive")
+        self.num_threads = threads
         self.native = NativeBreakoutVecEnv(
             num_envs,
             obs_h,
@@ -431,7 +437,42 @@ class BreakoutVecEnv(VectorEnv):
         self._reset_rngs = [
             np.random.default_rng(lane) for lane in range(self.num_envs)
         ]
-        self._closed = False
+        self.closed = False
+        self.live_snapshots_deterministic = True
+        self.capabilities = MappingProxyType(
+            {
+                "supported_action_modes": ("filtered", "custom_discrete"),
+                "supported_observation_layouts": ("chw",),
+                "supported_resize_algorithms": ("area",),
+                "supported_observation_copy_modes": (
+                    "copy",
+                    "safe_view",
+                    "unsafe_view",
+                ),
+                "supports_maxpool_last_two": False,
+                "supports_sticky_action_prob": False,
+                "supports_reward_clipping": False,
+                "supports_noop_reset": True,
+                "supports_state_catalog": True,
+                "supports_live_snapshots": True,
+                "supports_per_lane_rgb": True,
+            }
+        )
+        self.signal_schema = MappingProxyType(
+            {
+                key: MappingProxyType(
+                    {
+                        "dtype": np.dtype(np.int64),
+                        "shape": (),
+                        "available_on_reset": self._info_mode == "all",
+                        "available_on_step": self._info_mode != "none",
+                    }
+                )
+                for key in self._info_keys
+            }
+            if self._info_mode != "none"
+            else {}
+        )
 
     def _next_buffers(self):
         index = self._buffer_index
@@ -466,7 +507,7 @@ class BreakoutVecEnv(VectorEnv):
         return result
 
     def reset(self, *, seed: int | Sequence[int | None] | None = None, options=None):
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot reset a closed environment")
         options = {} if options is None else dict(options)
         mask = options.pop("reset_mask", None)
@@ -506,48 +547,18 @@ class BreakoutVecEnv(VectorEnv):
             for lane in np.flatnonzero(snapshot_mask)
         ):
             raise ValueError("snapshot reset lanes cannot also specify a seed")
-        starts = options.pop("start_indices", None)
-        state_indices = options.pop("state_indices", None)
-        if starts is not None and state_indices is not None:
-            raise ValueError("pass either start_indices or state_indices, not both")
-        if state_indices is not None:
-            starts = state_indices
-        start_ids = options.pop("start_ids", None)
-        if starts is not None and start_ids is not None:
-            raise ValueError("pass either start_indices or start_ids, not both")
-        if start_ids is not None:
-            values = np.asarray(start_ids, dtype=object)
-            if values.shape != (self.num_envs,):
-                raise ValueError(f"start_ids must have shape ({self.num_envs},)")
-            if any(values[lane] is not None for lane in np.flatnonzero(snapshot_mask)):
-                raise ValueError(
-                    "snapshot reset lanes must use None for the static start selector"
-                )
-            lookup = {name: index for index, name in enumerate(self.state_catalog)}
-            lookup.update(
-                {
-                    alias: lookup[canonical]
-                    for alias, canonical in _START_ALIASES.items()
-                    if canonical in lookup
-                }
-            )
-            starts = np.full(self.num_envs, -1, dtype=np.int32)
-            for lane in np.flatnonzero(mask & ~snapshot_mask):
-                value = values[lane]
-                if value is not None:
-                    try:
-                        starts[lane] = lookup[str(value)]
-                    except KeyError as exc:
-                        raise ValueError(f"unknown start_id {value!r}") from exc
-        elif starts is None:
+        starts = options.pop("state_indices", None)
+        if starts is None:
             starts = np.full(self.num_envs, self._default_start_index, dtype=np.int32)
             starts[snapshot_mask] = -1
         if not isinstance(starts, np.ndarray):
-            raise TypeError("start_indices must be a NumPy array")
+            raise TypeError("options['state_indices'] must be a NumPy array")
         if starts.shape != (self.num_envs,):
-            raise ValueError(f"start_indices must have shape ({self.num_envs},)")
+            raise ValueError(
+                f"options['state_indices'] must have shape ({self.num_envs},)"
+            )
         if starts.dtype != np.int32:
-            raise TypeError("start_indices must have dtype np.int32")
+            raise TypeError("options['state_indices'] must have dtype np.int32")
         if np.any(starts[snapshot_mask] != -1):
             raise ValueError(
                 "snapshot reset lanes must use -1 for the static start selector"
@@ -614,16 +625,6 @@ class BreakoutVecEnv(VectorEnv):
         self._initialized[mask] = True
         self._last_signals = signals
         infos = self._infos(signals, mask.copy())
-        start_names = np.asarray(
-            [self.state_catalog[index] for index in self._active_state_indices],
-            dtype=object,
-        )
-        infos["start_id"] = start_names
-        infos["_start_id"] = mask.copy()
-        infos["state"] = start_names
-        infos["_state"] = mask.copy()
-        infos["start_state"] = start_names
-        infos["_start_state"] = mask.copy()
         infos["state_index"] = self._active_state_indices.copy()
         infos["_state_index"] = mask.copy()
         start_source = np.full(self.num_envs, "environment", dtype=object)
@@ -635,7 +636,7 @@ class BreakoutVecEnv(VectorEnv):
         return self._obs(observations), infos
 
     def step(self, actions):
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot step a closed environment")
         if not np.all(self._initialized):
             raise RuntimeError("all lanes must be reset before the first step")
@@ -692,16 +693,13 @@ class BreakoutVecEnv(VectorEnv):
     def active_state_indices(self) -> np.ndarray:
         return self._active_state_indices
 
-    def active_states(self) -> tuple[str, ...]:
-        return tuple(self.state_catalog[index] for index in self._active_state_indices)
-
     def get_state(self) -> list[bytes]:
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot read state from a closed environment")
         return [bytes(value) for value in self.native.get_states()]
 
     def capture_snapshots(self, mask: np.ndarray) -> tuple[Any | None, ...]:
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot capture snapshots from a closed environment")
         if not isinstance(mask, np.ndarray):
             raise TypeError("mask must be a NumPy array")
@@ -718,7 +716,7 @@ class BreakoutVecEnv(VectorEnv):
     def set_state(
         self, states: Sequence[bytes], reset_mask: np.ndarray | None = None
     ) -> None:
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot restore state into a closed environment")
         if reset_mask is None:
             reset_mask = np.ones(self.num_envs, dtype=np.bool_)
@@ -804,7 +802,7 @@ class BreakoutVecEnv(VectorEnv):
 
     def render_lane(self, lane: int) -> np.ndarray:
         """Return one lane's native 160x210 RGB frame without advancing it."""
-        if self._closed:
+        if self.closed:
             raise RuntimeError("cannot render a closed environment")
         if isinstance(lane, (bool, np.bool_)):
             raise TypeError("lane must be an integer")
@@ -826,8 +824,11 @@ class BreakoutVecEnv(VectorEnv):
     def render(self):
         return self.render_lane(0)
 
+    def get_images(self) -> list[np.ndarray]:
+        return [self.render_lane(lane) for lane in range(self.num_envs)]
+
     def close(self):
-        self._closed = True
+        self.closed = True
 
 
 __all__ = [

@@ -54,13 +54,14 @@ def test_unreproducible_button_combination_is_rejected():
         BreakoutVecEnv(use_restricted_actions=[["BUTTON", "RIGHT"]])
 
 
-def test_native_default_and_simple_have_identical_semantic_hashes():
-    native = BreakoutVecEnv(num_envs=1)
+def test_default_is_the_named_simple_custom_discrete_table():
+    default = BreakoutVecEnv(num_envs=1)
     simple = BreakoutVecEnv(use_restricted_actions="simple", num_envs=1)
     try:
-        assert native.action_preset is None
-        assert native.action_table == simple.action_table
-        assert native.action_table_hash == simple.action_table_hash
+        assert default.action_mode == "custom_discrete"
+        assert default.action_preset == "simple"
+        assert default.action_table == simple.action_table
+        assert default.action_table_hash == simple.action_table_hash
     finally:
-        native.close()
+        default.close()
         simple.close()

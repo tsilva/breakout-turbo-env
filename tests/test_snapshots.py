@@ -127,7 +127,7 @@ def test_serialized_and_live_snapshots_replay_the_complete_observable_trace(
         restored.reset()
         restored.set_state(states)
         assert restored.get_state() == states
-        assert restored.active_states() == env.state_catalog
+        np.testing.assert_array_equal(restored.active_state_indices(), starts)
         for lane, expected in enumerate(frames):
             np.testing.assert_array_equal(restored.render_lane(lane), expected)
         assert _rollout_digest(restored, future) == expected_digest

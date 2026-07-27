@@ -22,11 +22,11 @@ def make_env(**kwargs):
 
 
 def test_registered_vector_entry_point_matches_declared_spaces():
-    env = gym.make_vec("BreakoutTurbo-v0", num_envs=4, num_threads=2)
+    env = gym.make_vec("Breakout-Atari2600-v0", num_envs=4, num_threads=2)
     try:
         observations, infos = env.reset(seed=7)
         assert env.observation_space.contains(observations)
-        actions = np.array([0, 1, 2, 3], dtype=np.uint8)
+        actions = np.zeros((4, 8), dtype=np.int8)
         transition = env.step(actions)
         assert env.observation_space.contains(transition[0])
         assert transition[1].shape == (4,)
@@ -38,7 +38,7 @@ def test_registered_vector_entry_point_matches_declared_spaces():
         env.close()
 
 
-def test_stable_retro_breakout_contract_is_a_drop_in_provider_surface():
+def test_breakout_contract_uses_the_canonical_turbo_provider_surface():
     env = BreakoutVecEnv(
         "Breakout-Atari2600-v0",
         state="Start",
@@ -76,7 +76,8 @@ def test_stable_retro_breakout_contract_is_a_drop_in_provider_surface():
         assert env.single_action_space == gym.spaces.MultiBinary(8)
         observations, infos = env.reset()
         assert observations.shape == (4, 4, 84, 84)
-        assert infos["start_id"].tolist() == ["Start"] * 4
+        assert infos["state_index"].tolist() == [0] * 4
+        assert infos["start_source"].tolist() == ["environment"] * 4
         actions = np.asarray(
             [
                 [0, 0, 0, 0, 0, 0, 0, 0],
@@ -127,7 +128,8 @@ def test_canonical_registered_id_uses_stable_retro_action_space():
     try:
         observations, infos = env.reset()
         assert observations.shape == (2, 4, 84, 84)
-        assert infos["start_id"].tolist() == ["Start", "Start"]
+        assert infos["state_index"].tolist() == [0, 0]
+        assert infos["start_source"].tolist() == ["environment", "environment"]
         assert env.single_action_space == gym.spaces.MultiBinary(8)
         env.step(np.zeros((2, 8), dtype=np.int8))
     finally:
@@ -147,8 +149,8 @@ def test_state_catalog_uses_stable_retro_catalog_indices():
             options={"state_indices": np.asarray([0, 1], dtype=np.int32)}
         )
         assert env.state_catalog == ("checker", "Start")
-        assert infos["state"].tolist() == ["checker", "Start"]
         assert infos["state_index"].tolist() == [0, 1]
+        assert infos["start_source"].tolist() == ["environment", "environment"]
     finally:
         env.close()
 
@@ -265,7 +267,8 @@ def test_contract_is_chw_manual_and_no_maxpool():
     assert obs.shape == (4, 4, 84, 84)
     assert obs.dtype == np.uint8
     assert env.autoreset_mode is AutoresetMode.DISABLED
-    assert infos["_start_id"].all()
+    assert infos["_state_index"].all()
+    assert infos["_start_source"].all()
     assert BreakoutVecEnv.metadata["autoreset_mode"] is AutoresetMode.DISABLED
     assert "autoreset_mode" not in inspect.signature(BreakoutVecEnv).parameters
     with pytest.raises(TypeError, match="unsupported option.*autoreset_mode"):
@@ -449,7 +452,7 @@ def test_start_catalog_and_atomic_validation():
     mask = np.array([True, False, False, False], dtype=np.bool_)
     starts = np.array([99, -1, -1, -1], dtype=np.int32)
     with pytest.raises(ValueError):
-        env.reset(options={"reset_mask": mask, "start_indices": starts})
+        env.reset(options={"reset_mask": mask, "state_indices": starts})
     assert env.get_state() == before
 
 
@@ -465,7 +468,7 @@ def test_crop_modes_preserve_chw_shape_and_change_pixels():
 def test_all_layouts_start_hidden_and_fire_uses_the_atari_serve():
     env = make_env(frame_skip=1)
     starts = np.arange(4, dtype=np.int32)
-    _, info = env.reset(options={"start_indices": starts})
+    _, info = env.reset(options={"state_indices": starts})
     assert RAW_HEIGHT == 210
     assert np.all(info["ball_y"] == 0)
     assert np.all(info["lives"] == 5)
@@ -534,7 +537,7 @@ def test_render_matches_atari_2600_geometry_and_palette():
 def test_render_lane_selects_any_lane_without_mutating_state():
     env = make_env(frame_skip=1)
     try:
-        env.reset(options={"start_indices": np.arange(4, dtype=np.int32)})
+        env.reset(options={"state_indices": np.arange(4, dtype=np.int32)})
         before = env.get_state()
 
         lane_zero = env.render_lane(0)
@@ -565,6 +568,42 @@ def test_render_lane_rejects_invalid_indices_and_closed_environment():
         env.render_lane(0)
     with pytest.raises(RuntimeError, match="closed environment"):
         env.render()
+
+
+def test_turbo_api_v1_metadata_capabilities_and_rendering():
+    env = make_env(frame_skip=1)
+    try:
+        env.reset(seed=123)
+        assert env.metadata["turbo_api_version"] == 1
+        assert env.observation_ownership == "safe_view"
+        assert env.observation_buffer_depth == 2
+        assert env.live_snapshots_deterministic is True
+        assert env.capabilities["supported_action_modes"] == (
+            "filtered",
+            "custom_discrete",
+        )
+        assert tuple(env.signal_schema) == tuple(env._info_keys)
+        images = env.get_images()
+        assert len(images) == env.num_envs
+        assert all(image.shape == (210, 160, 3) for image in images)
+        np.testing.assert_array_equal(env.render(), images[0])
+    finally:
+        env.close()
+
+
+def test_legacy_reset_selector_names_are_rejected():
+    env = make_env()
+    try:
+        with pytest.raises(ValueError, match="unsupported reset options"):
+            env.reset(
+                options={
+                    "start_indices": np.zeros(env.num_envs, dtype=np.int32)
+                }
+            )
+        with pytest.raises(ValueError, match="unsupported reset options"):
+            env.reset(options={"start_ids": np.full(env.num_envs, "Start")})
+    finally:
+        env.close()
 
 
 def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
@@ -720,8 +759,8 @@ def test_incremental_observations_match_forced_full_rebuild(preprocessing):
     incremental = make_env(info_filter="none", **preprocessing)
     rebuilt = make_env(info_filter="none", **preprocessing)
     starts = np.arange(4, dtype=np.int32)
-    first, _ = incremental.reset(options={"start_indices": starts})
-    second, _ = rebuilt.reset(options={"start_indices": starts})
+    first, _ = incremental.reset(options={"state_indices": starts})
+    second, _ = rebuilt.reset(options={"state_indices": starts})
     np.testing.assert_array_equal(first, second)
 
     rng = np.random.default_rng(20260719)
@@ -735,7 +774,7 @@ def test_incremental_observations_match_forced_full_rebuild(preprocessing):
         assert incremental.get_state() == rebuilt.get_state()
         terminated = incremental_step[2]
         if terminated.any():
-            options = {"reset_mask": terminated, "start_indices": starts}
+            options = {"reset_mask": terminated, "state_indices": starts}
             incremental_reset, _ = incremental.reset(options=options)
             rebuilt_reset, _ = rebuilt.reset(options=options)
             np.testing.assert_array_equal(incremental_reset, rebuilt_reset)
@@ -743,7 +782,7 @@ def test_incremental_observations_match_forced_full_rebuild(preprocessing):
 
 def test_optimized_hot_path_preserves_golden_observation_trace():
     env = BreakoutVecEnv(num_envs=4, num_threads=1, frame_skip=4, frame_stack=4)
-    observation, _ = env.reset(options={"start_indices": np.arange(4, dtype=np.int32)})
+    observation, _ = env.reset(options={"state_indices": np.arange(4, dtype=np.int32)})
     digest = hashlib.sha256(observation.tobytes())
     for step in range(100):
         actions = np.array([(step + lane) % 4 for lane in range(4)], dtype=np.uint8)
@@ -756,7 +795,7 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
             observation, _ = env.reset(
                 options={
                     "reset_mask": terminated,
-                    "start_indices": np.arange(4, dtype=np.int32),
+                    "state_indices": np.arange(4, dtype=np.int32),
                 }
             )
             digest.update(observation.tobytes())

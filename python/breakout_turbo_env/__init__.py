@@ -27,11 +27,6 @@ try:
     import gymnasium as gym
 
     gym.register(
-        id="BreakoutTurbo-v0",
-        entry_point=None,
-        vector_entry_point="breakout_turbo_env:BreakoutVecEnv",
-    )
-    gym.register(
         id="Breakout-Atari2600-v0",
         entry_point=None,
         vector_entry_point="breakout_turbo_env:BreakoutVecEnv",

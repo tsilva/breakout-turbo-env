@@ -147,9 +147,9 @@ def run(
     )
     layout_index = _LAYOUTS.index(layout)
     reset_mask = np.ones(1, dtype=np.bool_)
-    start_indices = np.array([layout_index], dtype=np.int32)
+    state_indices = np.array([layout_index], dtype=np.int32)
     observation, info = env.reset(
-        options={"reset_mask": reset_mask, "start_indices": start_indices}
+        options={"reset_mask": reset_mask, "state_indices": state_indices}
     )
     raw_height, raw_width = env.render().shape[:2]
     game_size = _scaled_frame_size(raw_width, raw_height, scale)
@@ -180,7 +180,7 @@ def run(
 
             if reset_requested:
                 observation, info = env.reset(
-                    options={"reset_mask": reset_mask, "start_indices": start_indices}
+                    options={"reset_mask": reset_mask, "state_indices": state_indices}
                 )
                 episode_return = 0.0
                 episode_steps = 0
@@ -220,7 +220,7 @@ def run(
                     observation, info = env.reset(
                         options={
                             "reset_mask": reset_mask,
-                            "start_indices": start_indices,
+                            "state_indices": state_indices,
                         }
                     )
                     episode_return = 0.0

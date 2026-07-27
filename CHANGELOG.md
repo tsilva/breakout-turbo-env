@@ -6,6 +6,15 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Changed
+
+- Added the immutable Turbo Vector API v1 declaration for capabilities,
+  signals, action semantics, observation ownership, state catalogs, and
+  per-lane RGB rendering.
+- Removed the legacy `BreakoutTurbo-v0` registration, legacy start-state
+  aliases, and legacy reset selector names. The canonical environment ID is
+  `Breakout-Atari2600-v0`, and vector reset selection uses `state_indices`.
+
 ## [0.4.1] - 2026-07-23
 
 ### Added
