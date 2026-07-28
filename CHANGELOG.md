@@ -6,6 +6,13 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Changed
+
+- Documented version-pinned GradLab PPO recipes as the repository's training
+  workflow while keeping training implementations outside this package.
+- Removed stale references to nonexistent built-in training and replay
+  commands.
+
 ## [0.5.1] - 2026-07-27
 
 ### Fixed

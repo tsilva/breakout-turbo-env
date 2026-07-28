@@ -60,6 +60,32 @@ if done.any():
     obs, reset_infos = env.reset(options={"reset_mask": done})
 ```
 
+## Train with GradLab
+
+Training recipes and implementations live in
+[GradLab](https://github.com/tsilva/rlab), keeping this repository focused on
+the environment. Run a published recipe from any directory without installing
+GradLab or cloning either repository.
+
+For the default high-throughput PPO recipe:
+
+```bash
+uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo
+```
+
+For PPO with learning-rate decay and KL-based update stopping:
+
+```bash
+uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo-stable-updates
+```
+
+Breakout Turbo is ROM-free, so neither command needs a ROM path or registration.
+GradLab shows live progress, writes a playable `final_model.zip` below `./runs`,
+and prints the matching version-pinned `uvx ... play` command when training
+finishes or is stopped safely. Local runs disable W&B and checkpoint evaluation
+by default, so they cannot establish acceptance or promotion. These are
+full-cap research recipes rather than short timed demos.
+
 ## Turbo Vector API v1
 
 `BreakoutVecEnv` implements the strict Turbo Vector API v1:
@@ -120,8 +146,7 @@ cargo test --locked --lib                                  # run Rust tests
 make test-stable-retro                                     # require live cartridge parity
 ```
 
-Append `--help` to the player, benchmark, training, or replay command for its
-options.
+Append `--help` to the player or benchmark command for its options.
 
 ## Notes
 

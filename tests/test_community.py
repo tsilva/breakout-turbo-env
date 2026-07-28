@@ -70,6 +70,17 @@ def test_readme_uses_pypi_safe_images_and_local_links_resolve():
             )
 
 
+def test_readme_delegates_training_to_pinned_gradlab_recipes():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert ("uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo") in readme
+    assert (
+        "uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo-stable-updates"
+    ) in readme
+    assert "Breakout Turbo is ROM-free" in readme
+    assert "breakout-turbo-env train" not in readme
+
+
 def test_workflow_actions_are_pinned_to_full_commits():
     pattern = re.compile(r"^\s*uses:\s+[^@\s]+@([^\s]+)", re.MULTILINE)
     workflows = list((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
