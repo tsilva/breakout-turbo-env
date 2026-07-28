@@ -81,6 +81,8 @@ def test_core_package_keeps_play_dependencies_optional():
         dependency.startswith("cibuildwheel")
         for dependency in project["optional-dependencies"]["dev"]
     )
+    assert "python/breakout_turbo_env/py.typed" in metadata["tool"]["maturin"]["include"]
+    assert (REPO_ROOT / "python" / "breakout_turbo_env" / "py.typed").is_file()
 
 
 def test_lock_policy_is_repository_owned_and_has_no_exemptions():

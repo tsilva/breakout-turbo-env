@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import inspect
 import pickle
 
+import breakout_turbo_env
 import gymnasium as gym
 import numpy as np
 import pytest
@@ -19,6 +21,12 @@ from gymnasium.vector import AutoresetMode
 
 def make_env(**kwargs):
     return BreakoutVecEnv(num_envs=4, num_threads=2, **kwargs)
+
+
+def test_public_package_exposes_distribution_version():
+    assert breakout_turbo_env.__version__ == importlib.metadata.version(
+        "breakout-turbo-env"
+    )
 
 
 def test_registered_vector_entry_point_matches_declared_spaces():

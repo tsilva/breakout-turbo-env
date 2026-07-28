@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .action_tables import ACTION_SETS, ACTION_TABLES, BUTTONS, ActionTable
 from .env import (
     FIXED_POINT_ONE,
@@ -10,7 +12,13 @@ from .env import (
     BreakoutVecEnv,
 )
 
+try:
+    __version__ = version("breakout-turbo-env")
+except PackageNotFoundError:  # Source tree imported without an installed distribution.
+    __version__ = "0+unknown"
+
 __all__ = [
+    "__version__",
     "BreakoutVecEnv",
     "ACTION_SETS",
     "ACTION_TABLES",
