@@ -11,6 +11,9 @@ approved publication. Never create or push a release tag by hand, never
 manually upload to PyPI, and never substitute a different workflow artifact
 after candidate validation.
 
+The binary release targets are exactly `macos-arm64` and `linux-x86_64`; the
+candidate also contains a source distribution.
+
 ## Preconditions
 
 Before beginning, verify all of these controls rather than assuming them:

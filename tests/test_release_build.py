@@ -44,19 +44,30 @@ def test_release_workflow_restores_platform_scoped_cargo_cache():
         in workflow
     )
     assert "cargo-release-v2-${{ matrix.platform }}-${{ runner.arch }}-" in workflow
+    release_build = release_build_module()
+    assert release_build.RELEASE_PLATFORMS == (
+        "macos-arm64",
+        "linux-x86_64",
+    )
+    for platform_name in release_build.RELEASE_PLATFORMS:
+        assert f"platform: {platform_name}" in workflow
+    assert "platform: macos\n" not in workflow
+    assert "platform: linux\n" not in workflow
 
 
 def test_release_build_uses_persistent_platform_scoped_cargo_targets(tmp_path):
     release_build = release_build_module()
 
     macos = release_build.macos_build_env(tmp_path)
-    output = tmp_path / "wheelhouse-v0.0.0-linux"
+    output = tmp_path / "wheelhouse-v0.0.0-linux-x86_64"
     linux = release_build.linux_build_command(output, tmp_path)
 
-    assert macos["CARGO_TARGET_DIR"] == str(tmp_path / "target-release" / "macos")
+    assert macos["CARGO_TARGET_DIR"] == str(
+        tmp_path / "target-release" / "macos-arm64"
+    )
     assert "linux/amd64" in linux
     assert (
-        f"{(tmp_path / 'target-release' / 'linux').resolve()}:/cargo-target"
+        f"{(tmp_path / 'target-release' / 'linux-x86_64').resolve()}:/cargo-target"
         in linux
     )
     assert "CARGO_TARGET_DIR=/cargo-target" in linux

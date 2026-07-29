@@ -34,6 +34,10 @@ MATURIN_IMAGE = (
     "sha256:2665227312dd1eab1c29c70a001dc8aac53155a2d048bede3b2df7f1691c8e38"
 )
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+|\.post\d+|\.dev\d+)?$")
+RELEASE_PLATFORMS = (
+    "macos-arm64",
+    "linux-x86_64",
+)
 
 
 def read_toml(path: Path) -> dict[str, object]:
@@ -406,7 +410,7 @@ def run(args: list[str], **kwargs: object) -> None:
 
 
 def cargo_target_dir(platform: str, root: Path = REPO_ROOT) -> Path:
-    if platform not in {"macos", "linux"}:
+    if platform not in RELEASE_PLATFORMS:
         raise ValueError(f"unknown platform: {platform}")
     return root / "target-release" / platform
 
@@ -414,7 +418,7 @@ def cargo_target_dir(platform: str, root: Path = REPO_ROOT) -> Path:
 def macos_build_env(root: Path = REPO_ROOT) -> dict[str, str]:
     return {
         "ARCHFLAGS": "-arch arm64",
-        "CARGO_TARGET_DIR": str(cargo_target_dir("macos", root)),
+        "CARGO_TARGET_DIR": str(cargo_target_dir("macos-arm64", root)),
         "MACOSX_DEPLOYMENT_TARGET": "11.0",
     }
 
@@ -429,7 +433,7 @@ def linux_build_command(output: Path, root: Path = REPO_ROOT) -> list[str]:
         "--volume",
         f"{root.resolve()}:/io",
         "--volume",
-        f"{cargo_target_dir('linux', root).resolve()}:/cargo-target",
+        f"{cargo_target_dir('linux-x86_64', root).resolve()}:/cargo-target",
         "--workdir",
         "/io",
         "--env",
@@ -454,13 +458,15 @@ def build_platform(args: argparse.Namespace) -> None:
     output.mkdir(parents=True, exist_ok=True)
     cargo_target_dir(args.platform).mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    if args.platform == "macos":
+    if args.platform == "macos-arm64":
         env.update(macos_build_env())
         run(
             [str(PYTHON), "-m", "maturin", "build", "--release", "--out", str(output)],
             env=env,
         )
         return
+    if args.platform != "linux-x86_64":  # pragma: no cover - argparse guards this.
+        raise ValueError(args.platform)
     run(linux_build_command(output))
 
 
@@ -533,9 +539,11 @@ def assert_audits(results: list[dict[str, object]]) -> None:
 
 
 def find_wheels(version: str) -> list[Path]:
-    wheels = list(wheelhouse(version, "macos").glob(f"*{version}*.whl"))
-    wheels.extend(wheelhouse(version, "linux").glob(f"*{version}*.whl"))
-    return sorted(wheels)
+    return sorted(
+        wheel
+        for platform_name in RELEASE_PLATFORMS
+        for wheel in wheelhouse(version, platform_name).glob(f"*{version}*.whl")
+    )
 
 
 def find_sdist(version: str) -> Path | None:
@@ -744,7 +752,7 @@ def main() -> None:
 
     platform = commands.add_parser("build-platform")
     platform.add_argument("--version")
-    platform.add_argument("--platform", choices=("macos", "linux"), required=True)
+    platform.add_argument("--platform", choices=RELEASE_PLATFORMS, required=True)
     platform.set_defaults(func=build_platform)
 
     sdist = commands.add_parser("build-sdist")

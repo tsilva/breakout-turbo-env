@@ -162,9 +162,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos
+          - platform: macos-arm64
             runner: macos-15
-          - platform: linux
+          - platform: linux-x86_64
             runner: ubuntu-24.04
     steps:
       - name: Checkout

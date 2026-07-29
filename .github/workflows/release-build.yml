@@ -94,9 +94,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos
+          - platform: macos-arm64
             runner: macos-15
-          - platform: linux
+          - platform: linux-x86_64
             runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
     steps:
@@ -198,10 +198,10 @@ jobs:
           mkdir -p candidate/dist
           cp wheels/*.whl candidate/dist/
           cp wheelhouse-v${{ needs.validate.outputs.version }}-sdist/*.tar.gz candidate/dist/
-          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-macos
-          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-linux
-          cp candidate/dist/*macosx*.whl wheelhouse-v${{ needs.validate.outputs.version }}-macos/
-          cp candidate/dist/*manylinux*.whl wheelhouse-v${{ needs.validate.outputs.version }}-linux/
+          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-macos-arm64
+          mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-linux-x86_64
+          cp candidate/dist/*macosx*.whl wheelhouse-v${{ needs.validate.outputs.version }}-macos-arm64/
+          cp candidate/dist/*manylinux*.whl wheelhouse-v${{ needs.validate.outputs.version }}-linux-x86_64/
           .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
             final-check --version "${{ needs.validate.outputs.version }}"
 
