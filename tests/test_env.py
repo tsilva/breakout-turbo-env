@@ -253,6 +253,8 @@ def test_noop_reset_max_requires_a_nonnegative_integer(value):
 
 
 def test_fire_reset_remains_unavailable():
+    parameters = inspect.signature(BreakoutVecEnv).parameters
+    assert parameters["use_fire_reset"].default is False
     with pytest.raises(ValueError, match="use_fire_reset"):
         make_env(use_fire_reset=True)
 
