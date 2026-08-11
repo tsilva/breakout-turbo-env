@@ -4,7 +4,7 @@ import copy
 import operator
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 import gymnasium as gym
 import numpy as np
@@ -69,6 +69,20 @@ _ATARI_2600_NTSC_PALETTE = np.array(
 def _enum_name(value: Any) -> str:
     name = getattr(value, "name", None)
     return str(name if name is not None else value).strip().lower()
+
+
+def _is_stable_integration(value: Any) -> bool:
+    name = getattr(value, "name", None)
+    if name is not None and str(name).strip().lower() == "stable":
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() == "stable"
+    if isinstance(value, (bool, np.bool_)):
+        return False
+    try:
+        return operator.index(value) == 1
+    except TypeError:
+        return False
 
 
 def _normalize_game(game: str | None) -> str:
@@ -169,7 +183,7 @@ def _validate_retro_compatibility_options(
         raise ValueError("info must be 'data' or None; Atari signals are built in")
     _require_fixed_option("record", record, False)
     _require_fixed_option("players", players, 1)
-    if _enum_name(inttype) not in {"stable", "1"}:
+    if not _is_stable_integration(inttype):
         raise ValueError("inttype must select the Stable integration")
     if _enum_name(obs_type) not in {"image", "0"}:
         raise ValueError("obs_type must be 'image'")
@@ -211,7 +225,7 @@ class BreakoutVecEnv(VectorEnv):
         players: int = 1,
         inttype: Any = "stable",
         obs_type: Any = "image",
-        render_mode: str = "rgb_array",
+        render_mode: Literal["rgb_array"] | None = None,
         *,
         num_envs: int = 1,
         num_threads: int | None = None,
@@ -253,7 +267,6 @@ class BreakoutVecEnv(VectorEnv):
         )
         self.buttons = tuple(BUTTONS)
         self.use_restricted_actions = use_restricted_actions
-        self._retro_actions = action_mode == "filtered"
         self._custom_native_actions = (
             None
             if custom_actions is None
@@ -320,8 +333,8 @@ class BreakoutVecEnv(VectorEnv):
             or not 0 <= obs_crop_fill <= 255
         ):
             raise ValueError("obs_crop_fill must be an integer in [0, 255]")
-        if render_mode != "rgb_array":
-            raise ValueError("render_mode must be 'rgb_array'")
+        if render_mode not in (None, "rgb_array"):
+            raise ValueError("render_mode must be None or 'rgb_array'")
         num_envs = int(num_envs)
         frame_skip = int(frame_skip)
         frame_stack = int(frame_stack)
@@ -432,7 +445,6 @@ class BreakoutVecEnv(VectorEnv):
         self._buffer_index = 0
         self._active_state_indices = np.zeros(num_envs, dtype=np.int32)
         self._active_state_indices.setflags(write=False)
-        self._last_signals = self._signal_buffers[0]
         self._initialized = np.zeros(num_envs, dtype=np.bool_)
         self._reset_rngs = [
             np.random.default_rng(lane) for lane in range(self.num_envs)
@@ -623,7 +635,6 @@ class BreakoutVecEnv(VectorEnv):
             self._active_state_indices[snapshot_mask] = restored_indices[snapshot_mask]
         self._active_state_indices.setflags(write=writable)
         self._initialized[mask] = True
-        self._last_signals = signals
         infos = self._infos(signals, mask.copy())
         infos["state_index"] = self._active_state_indices.copy()
         infos["_state_index"] = mask.copy()
@@ -653,7 +664,6 @@ class BreakoutVecEnv(VectorEnv):
             signals,
             self._info_mode != "none",
         )
-        self._last_signals = signals
         return (
             self._obs(observations),
             rewards,
@@ -750,7 +760,6 @@ class BreakoutVecEnv(VectorEnv):
         rewards[reset_mask] = 0.0
         terminated[reset_mask] = False
         truncated[reset_mask] = False
-        self._last_signals = signals
         self._initialized[reset_mask] = True
         self._active_state_indices.setflags(write=True)
         self._active_state_indices[reset_mask] = restored_indices[reset_mask]
@@ -800,7 +809,7 @@ class BreakoutVecEnv(VectorEnv):
             "actions": np.tile(action_values, len(states)),
         }
 
-    def render_lane(self, lane: int) -> np.ndarray:
+    def render_lane(self, lane: int) -> np.ndarray | None:
         """Return one lane's native 160x210 RGB frame without advancing it."""
         if self.closed:
             raise RuntimeError("cannot render a closed environment")
@@ -814,6 +823,8 @@ class BreakoutVecEnv(VectorEnv):
             raise IndexError(
                 f"lane must be in [0, {self.num_envs - 1}], got {lane_index}"
             )
+        if self.render_mode != "rgb_array":
+            return None
         indexed = np.frombuffer(
             self.native.render_indexed(lane_index), dtype=np.uint8
         ).reshape(
@@ -824,7 +835,9 @@ class BreakoutVecEnv(VectorEnv):
     def render(self):
         return self.render_lane(0)
 
-    def get_images(self) -> list[np.ndarray]:
+    def get_images(self) -> list[np.ndarray | None]:
+        if self.render_mode != "rgb_array":
+            return [None for _ in range(self.num_envs)]
         return [self.render_lane(lane) for lane in range(self.num_envs)]
 
     def close(self):

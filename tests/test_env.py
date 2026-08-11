@@ -255,8 +255,34 @@ def test_noop_reset_max_requires_a_nonnegative_integer(value):
 def test_fire_reset_remains_unavailable():
     parameters = inspect.signature(BreakoutVecEnv).parameters
     assert parameters["use_fire_reset"].default is False
+    assert parameters["render_mode"].default is None
     with pytest.raises(ValueError, match="use_fire_reset"):
         make_env(use_fire_reset=True)
+
+
+@pytest.mark.parametrize("value", ["stable", "STABLE", 1, np.int64(1)])
+def test_stable_integration_compatibility_forms_are_accepted(value):
+    env = make_env(inttype=value)
+    env.close()
+
+
+@pytest.mark.parametrize("value", [True, np.bool_(True), "1", 0, object()])
+def test_non_stable_integration_values_are_rejected(value):
+    with pytest.raises(ValueError, match="inttype"):
+        make_env(inttype=value)
+
+
+def test_enum_like_stable_integration_is_accepted():
+    class StableIntegration:
+        name = "STABLE"
+
+    env = make_env(inttype=StableIntegration())
+    env.close()
+
+
+def test_unsupported_render_mode_is_rejected():
+    with pytest.raises(ValueError, match="render_mode"):
+        make_env(render_mode="human")
 
 
 def test_full_wall_info_preserves_all_108_brick_bits_and_wall_progress():
@@ -494,7 +520,7 @@ def test_all_layouts_start_hidden_and_fire_uses_the_atari_serve():
 
 
 def test_render_matches_atari_2600_geometry_and_palette():
-    env = make_env(frame_skip=1)
+    env = make_env(frame_skip=1, render_mode="rgb_array")
     env.reset()
     frame = env.render()
     assert frame.shape == (RENDER_HEIGHT, RENDER_WIDTH, 3) == (210, 160, 3)
@@ -545,7 +571,7 @@ def test_render_matches_atari_2600_geometry_and_palette():
 
 
 def test_render_lane_selects_any_lane_without_mutating_state():
-    env = make_env(frame_skip=1)
+    env = make_env(frame_skip=1, render_mode="rgb_array")
     try:
         env.reset(options={"state_indices": np.arange(4, dtype=np.int32)})
         before = env.get_state()
@@ -581,7 +607,7 @@ def test_render_lane_rejects_invalid_indices_and_closed_environment():
 
 
 def test_turbo_api_v1_metadata_capabilities_and_rendering():
-    env = make_env(frame_skip=1)
+    env = make_env(frame_skip=1, render_mode="rgb_array")
     try:
         env.reset(seed=123)
         assert env.metadata["turbo_api_version"] == 1
@@ -597,6 +623,17 @@ def test_turbo_api_v1_metadata_capabilities_and_rendering():
         assert len(images) == env.num_envs
         assert all(image.shape == (210, 160, 3) for image in images)
         np.testing.assert_array_equal(env.render(), images[0])
+    finally:
+        env.close()
+
+
+def test_rendering_is_disabled_by_default():
+    env = make_env(frame_skip=1)
+    try:
+        env.reset()
+        assert env.render() is None
+        assert env.render_lane(1) is None
+        assert env.get_images() == [None, None, None, None]
     finally:
         env.close()
 
@@ -617,7 +654,7 @@ def test_legacy_reset_selector_names_are_rejected():
 
 
 def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
-    env = make_env(frame_skip=1)
+    env = make_env(frame_skip=1, render_mode="rgb_array")
     env.reset()
     red = np.array([200, 72, 72], dtype=np.uint8)
     black = np.array([0, 0, 0], dtype=np.uint8)
@@ -669,7 +706,7 @@ def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
 
 
 def test_render_reflects_missing_bricks_and_lane_status():
-    env = make_env(frame_skip=1)
+    env = make_env(frame_skip=1, render_mode="rgb_array")
     env.reset()
     env.configure_lane(
         0,

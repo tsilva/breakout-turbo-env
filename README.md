@@ -102,8 +102,11 @@ full-cap research recipes rather than short timed demos.
   with `active_state_indices()`; state sampling and lane routing remain
   caller-owned.
 - `observation_ownership` and `observation_buffer_depth` declare the exact
-  lifetime of returned observations. `render_lane(index)` renders one lane,
-  `get_images()` renders all lanes, and `render()` renders lane zero.
+  lifetime of returned observations. Rendering is opt-in: with
+  `render_mode="rgb_array"`, `render_lane(index)` renders one lane,
+  `get_images()` renders all lanes, and `render()` renders lane zero. With the
+  default `render_mode=None`, the first two methods return `None` and
+  `get_images()` returns one `None` entry per lane.
 
 Interesting live positions can be archived without advancing the game and
 restored into any lane of the same environment:
@@ -166,9 +169,9 @@ Append `--help` to the player or benchmark command for its options.
 - The canonical `Start` state targets Stable Retro's native 160×210 Atari Breakout frame,
   lifecycle, physics, raster, rewards, collision behavior, and public trajectory
   values. In particular, `ball_y` uses the Atari RAM convention where zero
-  means the serve is waiting for FIRE. `render()` returns lane zero's RGB frame,
-  while `render_lane(index)` selects any lane, separately from policy
-  observations.
+  means the serve is waiting for FIRE. Opt into raw frames with
+  `render_mode="rgb_array"`; `render()` then returns lane zero's RGB frame while
+  `render_lane(index)` selects any lane, separately from policy observations.
 - Live validation requires a separately obtained lawful ROM and a sibling
   `stable-retro-turbo` checkout. No ROM, save state, or recorded reference
   frame is distributed by this project.

@@ -144,6 +144,7 @@ def run(
         frame_skip=frame_skip,
         frame_stack=4,
         info_filter="all",
+        render_mode="rgb_array",
     )
     layout_index = _LAYOUTS.index(layout)
     reset_mask = np.ones(1, dtype=np.bool_)

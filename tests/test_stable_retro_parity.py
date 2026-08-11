@@ -256,6 +256,7 @@ def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
         num_envs=1,
         num_threads=1,
         frame_skip=4,
+        render_mode="rgb_array",
         noop_reset_max=30,
         use_fire_reset=False,
         sticky_action_prob=0.0,

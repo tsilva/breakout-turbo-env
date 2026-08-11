@@ -6,6 +6,14 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Changed
+
+- Made RGB rendering opt-in with `render_mode="rgb_array"`; the default `None`
+  mode returns no frames and keeps `get_images()` lane-aligned with `None`
+  entries.
+- Tightened Stable integration compatibility validation and removed unused
+  action/signal bookkeeping without changing the five-life Atari lifecycle.
+
 ## [0.5.2] - 2026-07-29
 
 ### Changed

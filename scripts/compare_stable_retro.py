@@ -279,7 +279,13 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
     state = reference.find_flight(dx_sign, -1)
     reference.force(state, start)
 
-    turbo = BreakoutVecEnv(num_envs=1, num_threads=1, frame_skip=1, frame_stack=1)
+    turbo = BreakoutVecEnv(
+        num_envs=1,
+        num_threads=1,
+        frame_skip=1,
+        frame_stack=1,
+        render_mode="rgb_array",
+    )
     turbo.reset()
     source_x, source_y = start.x, start.y
     turbo.configure_lane(
@@ -345,7 +351,13 @@ def compare_episode(
 
     reference.reopen()
     stable_frame, stable_info = reference.env.reset()
-    turbo = BreakoutVecEnv(num_envs=1, num_threads=1, frame_skip=1, frame_stack=1)
+    turbo = BreakoutVecEnv(
+        num_envs=1,
+        num_threads=1,
+        frame_skip=1,
+        frame_stack=1,
+        render_mode="rgb_array",
+    )
     _, turbo_info = turbo.reset()
     turbo_frame = turbo.render()
     rng = np.random.default_rng(seed)

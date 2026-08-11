@@ -93,8 +93,8 @@ class _SB3ManualResetMixin:
     def close(self) -> None:
         self.env.close()
 
-    def get_images(self) -> list[np.ndarray]:
-        return [self.env.render_lane(lane) for lane in range(self.num_envs)]
+    def get_images(self) -> list[np.ndarray | None]:
+        return list(self.env.get_images())
 
     def get_attr(self, attr_name: str, indices=None) -> list[Any]:
         value = getattr(self.env, attr_name)
