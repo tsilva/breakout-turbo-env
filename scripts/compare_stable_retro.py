@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-RED = np.array([200, 72, 72], dtype=np.uint8)
+RED = np.array([72, 72, 200], dtype=np.uint8)
 GAME = "Breakout-Atari2600-v0"
 
 
@@ -159,10 +159,18 @@ class StableReference:
         self._data_dir = data_dir
         self._base_info = data_dir / "data.json"
         self._scenario = data_dir / "scenario.json"
+        self._temporary = tempfile.TemporaryDirectory(prefix="breakout-parity-")
+        discovery_data = json.loads(self._base_info.read_text())
+        discovery_data.setdefault("info", {})["ball_y"] = {
+            "address": 229,
+            "type": "|u1",
+        }
+        discovery_info = Path(self._temporary.name) / "discovery-data.json"
+        discovery_info.write_text(json.dumps(discovery_data))
         discovery = retro.make(
             GAME,
-            state="Start",
-            info=str(self._base_info),
+            state=str(data_dir / "Start.state"),
+            info=str(discovery_info),
             scenario=str(self._scenario),
             inttype=self._retro.data.Integrations.ALL,
             render_mode="rgb_array",
@@ -172,10 +180,9 @@ class StableReference:
         finally:
             discovery.close()
 
-        data = json.loads(self._base_info.read_text())
+        data = discovery_data
         data.setdefault("info", {})["ball_x_probe"] = {"address": address, "type": "|u1"}
         data["info"]["paddle_x_probe"] = {"address": paddle_address, "type": "|u1"}
-        self._temporary = tempfile.TemporaryDirectory(prefix="breakout-parity-")
         self._info_path = Path(self._temporary.name) / "data.json"
         self._info_path.write_text(json.dumps(data))
         self.env = self._make_env()
@@ -183,7 +190,7 @@ class StableReference:
     def _make_env(self) -> Any:
         return self._retro.make(
             GAME,
-            state="Start",
+            state=str(self._data_dir / "Start.state"),
             info=str(self._info_path),
             scenario=str(self._scenario),
             inttype=self._retro.data.Integrations.ALL,

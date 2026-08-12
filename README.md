@@ -147,6 +147,7 @@ uv run --frozen ruff check .                               # lint Python
 uv run --frozen pytest -m "not stable_retro"               # run regular Python tests
 cargo test --locked --lib                                  # run Rust tests
 make test-stable-retro                                     # require live cartridge parity
+make test-semantic-oracle                                  # compare to original Stable Retro authority
 ```
 
 Append `--help` to the player or benchmark command for its options.
@@ -172,9 +173,11 @@ Append `--help` to the player or benchmark command for its options.
   means the serve is waiting for FIRE. Opt into raw frames with
   `render_mode="rgb_array"`; `render()` then returns lane zero's RGB frame while
   `render_lane(index)` selects any lane, separately from policy observations.
-- Live validation requires a separately obtained lawful ROM and a sibling
-  `stable-retro-turbo` checkout. No ROM, save state, or recorded reference
-  frame is distributed by this project.
+- Live validation requires a separately obtained lawful ROM. The TurboBench
+  semantic oracle pins original `stable-retro==1.0.1` as the authority; the
+  sibling `stable-retro-turbo` differential remains a secondary regression
+  check. No ROM, save state, or recorded reference frame is distributed by
+  this project.
 - Only Apple-silicon macOS and x86-64 Linux are supported. See
   [support](SUPPORT.md), [benchmarking](docs/benchmarking.md), and
   [release validation](docs/release-validation.md) for exact boundaries.

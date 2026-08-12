@@ -6,8 +6,17 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added a ROM-backed TurboBench semantic-oracle release gate against original
+  Stable Retro 1.0.1, with Stable Retro Turbo retained as a secondary parity
+  target.
+
 ### Changed
 
+- Matched the original Stable Retro Breakout palette, native frames, policy
+  observations, paddle timing, rewards, lifecycle, resets, and shared info
+  signals under canonical action traces.
 - Made RGB rendering opt-in with `render_mode="rgb_array"`; the default `None`
   mode returns no frames and keeps `get_images()` lane-aligned with `None`
   entries.

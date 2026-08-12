@@ -40,7 +40,7 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
     (295, 14),
     (318, 16),
     (341, 18),
-    (366, 20),
+    (365, 20),
     (388, 22),
     (411, 24),
     (447, 26),
@@ -78,7 +78,7 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
     (1203, 90),
     (1228, 92),
     (1251, 94),
-    (1274, 96),
+    (1273, 96),
     (1297, 98),
     (1320, 100),
     (1343, 102),
@@ -93,7 +93,7 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
     (1553, 120),
     (1576, 122),
     (1599, 124),
-    (1624, 126),
+    (1623, 126),
     (1647, 128),
     (1670, 130),
     (1693, 132),
@@ -106,14 +106,14 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
     (1857, 146),
     (1880, 148),
     (1903, 150),
-    (1926, 152),
+    (1925, 152),
     (1949, 154),
     (1972, 156),
     (1995, 158),
     (2020, 160),
     // The startup charge ramp reaches values unavailable once Stella's
-    // repeat acceleration locks to 25; 2039 is the observed central boundary.
-    (2039, 162),
+    // repeat acceleration locks to 60; 2042 is the observed central boundary.
+    (2042, 162),
     (2066, 164),
     (2088, 166),
     (2112, 168),
@@ -123,7 +123,7 @@ const PADDLE_MEASURE_THRESHOLDS: [(u16, u8); 89] = [
     (2205, 176),
     (2228, 178),
     (2253, 180),
-    (2276, 182),
+    (2275, 182),
     (2299, 184),
     (2322, 186),
 ];
@@ -542,7 +542,11 @@ fn update_paddle(lane: &mut Lane, action: u8) {
     if lane.paddle_held {
         lane.paddle_repeat += 1;
         if lane.paddle_repeat > 5 {
-            lane.paddle_repeat = 25;
+            // Stable Retro 1.0.1 embeds Stella 3.9.1, whose digital paddle
+            // distance is 20 + (sensitivity << 3).  The canonical
+            // sensitivity is five, so an accelerated hold advances the RC
+            // charge by 60 per emulator frame.
+            lane.paddle_repeat = 60;
         }
     }
     match action {
@@ -783,14 +787,14 @@ fn palette_gray(index: u8) -> u8 {
     // precomputed results for the indexed palette returned by render_indexed.
     match index {
         0 => 0,
-        1 => 136,
-        2 => 111,
-        3 => 125,
-        4 => 129,
-        5 => 146,
+        1 => 142,
+        2 => 87,
+        3 => 103,
+        4 => 106,
+        5 => 126,
         6 => 124,
-        7 => 84,
-        8 => 123,
+        7 => 110,
+        8 => 139,
         _ => 0,
     }
 }
@@ -2031,25 +2035,25 @@ mod parity_tests {
 
     #[test]
     fn policy_grayscale_matches_stable_retro_rgb565_luminance() {
-        let stella_rgb565_palette = [
+        let stable_retro_authority_palette = [
             [0_u8, 0, 0],
-            [136, 136, 136],
-            [200, 72, 72],
-            [192, 104, 56],
-            [176, 120, 48],
-            [160, 160, 40],
+            [142, 142, 142],
+            [72, 72, 200],
+            [58, 108, 198],
+            [48, 122, 180],
+            [42, 162, 162],
             [72, 160, 72],
-            [64, 72, 200],
-            [64, 152, 128],
+            [200, 72, 66],
+            [130, 158, 66],
         ];
 
-        for (index, [red, green, blue]) in stella_rgb565_palette.into_iter().enumerate() {
+        for (index, [red, green, blue]) in stable_retro_authority_palette.into_iter().enumerate() {
             let expected =
                 ((u32::from(red) * 77 + u32::from(green) * 150 + u32::from(blue) * 29 + 128) >> 8)
                     as u8;
             assert_eq!(palette_gray(index as u8), expected);
         }
-        assert_eq!(palette_gray(stella_rgb565_palette.len() as u8), 0);
+        assert_eq!(palette_gray(stable_retro_authority_palette.len() as u8), 0);
     }
 
     fn active_lane() -> Lane {

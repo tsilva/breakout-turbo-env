@@ -41,6 +41,27 @@ cargo test --locked --lib
 pytest -m "not stable_retro"
 ```
 
+Before publishing, a clean candidate checkout must pass the pinned
+original-Stable-Retro semantic oracle and retain its diagnostic receipt outside
+the repository. After publishing, regenerate the oracle with
+`breakout-turbo-env@VERSION`; that PyPI-candidate receipt is the release gate:
+
+```bash
+make test-semantic-oracle ORACLE_OUTPUT=/external/evidence/breakout-receipt
+turbobench oracle breakout/start-v2 \
+  --left stable-retro@1.0.1 \
+  --right breakout-turbo-env@VERSION \
+  --output /external/evidence/breakout-release-receipt
+make verify-semantic-oracle \
+  ORACLE_RECEIPT=/external/evidence/breakout-release-receipt
+```
+
+The final command is the fail-closed release gate: it requires the complete
+4,096-step shapes 1 and 4 workload, `stable-retro==1.0.1` from PyPI, no dirty or
+diagnostic provider override, and a PyPI `breakout-turbo-env` candidate. Public CI
+cannot run this private-ROM gate; its ordinary tests validate the harness and
+environment contracts but are not cartridge-fidelity evidence.
+
 ## Candidate artifacts
 
 Each candidate contains exactly:

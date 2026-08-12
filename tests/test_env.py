@@ -527,15 +527,15 @@ def test_render_matches_atari_2600_geometry_and_palette():
     assert frame.dtype == np.uint8
 
     black = np.array([0, 0, 0], dtype=np.uint8)
-    gray = np.array([136, 136, 136], dtype=np.uint8)
+    gray = np.array([142, 142, 142], dtype=np.uint8)
     row_colors = np.array(
         [
-            [200, 72, 72],
-            [192, 104, 56],
-            [176, 120, 48],
-            [160, 160, 40],
+            [72, 72, 200],
+            [58, 108, 198],
+            [48, 122, 180],
+            [42, 162, 162],
             [72, 160, 72],
-            [64, 72, 200],
+            [200, 72, 66],
         ],
         dtype=np.uint8,
     )
@@ -564,8 +564,8 @@ def test_render_matches_atari_2600_geometry_and_palette():
     five[6:8, 8:12] = gray
     five[8:10, :] = gray
     np.testing.assert_array_equal(frame[5:15, 100:112], five)
-    teal = np.array([64, 152, 128], dtype=np.uint8)
-    red = np.array([200, 72, 72], dtype=np.uint8)
+    teal = np.array([130, 158, 66], dtype=np.uint8)
+    red = np.array([72, 72, 200], dtype=np.uint8)
     np.testing.assert_array_equal(frame[189:196, :8], np.broadcast_to(teal, (7, 8, 3)))
     np.testing.assert_array_equal(frame[189:195, 152:], np.broadcast_to(red, (6, 8, 3)))
 
@@ -656,7 +656,7 @@ def test_legacy_reset_selector_names_are_rejected():
 def test_render_uses_exact_atari_ball_and_paddle_footprints_at_motion_limits():
     env = make_env(frame_skip=1, render_mode="rgb_array")
     env.reset()
-    red = np.array([200, 72, 72], dtype=np.uint8)
+    red = np.array([72, 72, 200], dtype=np.uint8)
     black = np.array([0, 0, 0], dtype=np.uint8)
 
     common = {
@@ -720,7 +720,7 @@ def test_render_reflects_missing_bricks_and_lane_status():
     )
     frame = env.render()
     black = np.array([0, 0, 0], dtype=np.uint8)
-    red = np.array([200, 72, 72], dtype=np.uint8)
+    red = np.array([72, 72, 200], dtype=np.uint8)
     np.testing.assert_array_equal(
         frame[57:63, 8:24], np.broadcast_to(red, frame[57:63, 8:24].shape)
     )
@@ -848,7 +848,7 @@ def test_optimized_hot_path_preserves_golden_observation_trace():
             digest.update(observation.tobytes())
     assert (
         digest.hexdigest()
-        == "e2f21c86f400ab9cf1de27ccf068cfaed11d4b1aa3dccf009ba5497ffa172fd3"
+        == "1938b5db5de58033f0a777f82645c73a254288777cc20e1edf76221bf387c862"
     )
 
 
@@ -907,19 +907,19 @@ def test_atari_digital_paddle_inertia_trace():
         26,
         27,
         27,
-        28,
-        30,
-        32,
-        34,
-        36,
+        29,
+        33,
         38,
-        40,
-        42,
-        45,
-        47,
-        49,
-        51,
+        43,
+        48,
         53,
+        58,
+        63,
+        68,
+        74,
+        79,
+        84,
+        89,
     ]
 
 
