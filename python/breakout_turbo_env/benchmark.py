@@ -74,6 +74,7 @@ def run_benchmark(*, steps: int, warmup: int, repeats: int, threads: int) -> lis
     if steps <= 0 or warmup < 0 or repeats <= 0 or threads <= 0:
         raise ValueError("steps, repeats, and threads must be positive; warmup must be non-negative")
     env = BreakoutVecEnv(
+        game="Breakout-Atari2600-v0",
         num_envs=NUM_ENVS,
         num_threads=threads,
         obs_resize=(OBSERVATION_SIZE, OBSERVATION_SIZE),

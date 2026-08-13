@@ -95,11 +95,12 @@ finishes or is stopped safely. Local runs disable W&B and checkpoint evaluation
 by default, so they cannot establish acceptance or promotion. These are
 full-cap research recipes rather than short timed demos.
 
-## Turbo Vector API v1
+## Turbo Vector API v2
 
-`BreakoutVecEnv` implements the strict Turbo Vector API v1:
+`BreakoutVecEnv` implements the strict Turbo Vector API v2:
 
-- `metadata["turbo_api_version"]` is `1`, and `metadata["render_modes"]`
+- `metadata["turbo_api_version"]` is `2`,
+  `metadata["transition_transport"]` is `"numpy"`, and `metadata["render_modes"]`
   advertises `rgb_array`.
 - Immutable `capabilities` and `signal_schema` declarations describe supported
   features and the dtype, shape, and reset/step availability of every signal.

@@ -6,6 +6,17 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Changed
+
+- Migrated `BreakoutVecEnv` to Turbo Vector API v2 with the exact shared
+  constructor, required `game`, resolved NumPy transport, immutable v2
+  capabilities, and portable signal schema.
+- Standardized reset infos to numeric `state_index`, `start_source`, and
+  `noop_reset_count` arrays and retained seeded positive reset NOOP sampling
+  over the inclusive `1..N` range.
+- Kept the simple action table as Breakout's resolved default and made all
+  internal benchmark, player, and capture workloads explicit.
+
 ## [0.5.4] - 2026-08-13
 
 ### Added

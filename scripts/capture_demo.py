@@ -66,11 +66,13 @@ def capture(frames: int, output: Path) -> None:
         str(output),
     ]
     env = BreakoutVecEnv(
+        game="Breakout-Atari2600-v0",
         num_envs=1,
         num_threads=1,
         frame_skip=1,
         frame_stack=1,
         info_filter="all",
+        render_mode="rgb_array",
     )
     process = subprocess.Popen(command, stdin=subprocess.PIPE)
     assert process.stdin is not None

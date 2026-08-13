@@ -103,7 +103,11 @@ keeping `BreakoutVecEnv` itself manual-reset:
 from breakout_turbo_env import BreakoutVecEnv
 from breakout_turbo_env.sb3 import make_sb3_vec_env
 
-native_env = BreakoutVecEnv(num_envs=16, num_threads=8)
+native_env = BreakoutVecEnv(
+    "Breakout-Atari2600-v0",
+    num_envs=16,
+    num_threads=8,
+)
 env = make_sb3_vec_env(native_env)
 # Pass env to an SB3 algorithm installed separately.
 env.close()
@@ -180,8 +184,9 @@ obs, infos = env.reset(
 That reset restores lanes zero and one from the same live position, resets lane
 two from catalog entry zero, and leaves lane three byte-exact. Snapshot capture
 and restoration execute no game frame, no reset no-op, and no preprocessing
-transition. Reset infos expose `start_source` as `"snapshot"` or
-`"environment"`, with the usual `_start_source` presence mask.
+transition. Reset infos expose `start_source` as `int8`, with `1` for a
+snapshot and `0` for an environment state, plus the usual `_start_source`
+presence mask.
 
 Live handles are session-local, intentionally not pickleable, and invalid for
 another environment or after their originating environment closes. They do

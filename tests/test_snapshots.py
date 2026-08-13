@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from breakout_turbo_env import BreakoutVecEnv
 
+GAME_ID = "Breakout-Atari2600-v0"
+
 
 def _action_tape(length: int, seed: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
@@ -89,8 +91,8 @@ def _rollout_digest(env: BreakoutVecEnv, tape: np.ndarray) -> str:
 def test_serialized_and_live_snapshots_replay_the_complete_observable_trace(
     configuration,
 ):
-    env = BreakoutVecEnv(num_envs=4, num_threads=2, **configuration)
-    restored = BreakoutVecEnv(num_envs=4, num_threads=1, **configuration)
+    env = BreakoutVecEnv(GAME_ID, num_envs=4, num_threads=2, **configuration)
+    restored = BreakoutVecEnv(GAME_ID, num_envs=4, num_threads=1, **configuration)
     try:
         starts = np.arange(4, dtype=np.int32)
         env.reset(options={"state_indices": starts})
@@ -137,8 +139,12 @@ def test_serialized_and_live_snapshots_replay_the_complete_observable_trace(
 
 
 def test_branch_results_are_exactly_the_same_as_real_environment_steps():
-    source = BreakoutVecEnv(num_envs=4, num_threads=2, frame_skip=3, frame_stack=4)
-    actual = BreakoutVecEnv(num_envs=8, num_threads=1, frame_skip=3, frame_stack=4)
+    source = BreakoutVecEnv(
+        GAME_ID, num_envs=4, num_threads=2, frame_skip=3, frame_stack=4
+    )
+    actual = BreakoutVecEnv(
+        GAME_ID, num_envs=8, num_threads=1, frame_skip=3, frame_stack=4
+    )
     try:
         source.reset(options={"state_indices": np.arange(4, dtype=np.int32)})
         source.step(np.ones(4, dtype=np.uint8))
@@ -172,15 +178,15 @@ def test_branch_results_are_exactly_the_same_as_real_environment_steps():
 
 def test_rejected_cross_catalog_restore_is_atomic():
     source = BreakoutVecEnv(
+        GAME_ID,
         num_envs=1,
         num_threads=1,
-        state="checker",
         state_catalog=("checker",),
     )
     target = BreakoutVecEnv(
+        GAME_ID,
         num_envs=1,
         num_threads=1,
-        state="Start",
         state_catalog=("Start",),
     )
     try:

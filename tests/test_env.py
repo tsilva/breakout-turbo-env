@@ -23,9 +23,11 @@ from breakout_turbo_env import (
 from gymnasium.envs.registration import EnvSpec
 from gymnasium.vector import AutoresetMode
 
+GAME_ID = "Breakout-Atari2600-v0"
+
 
 def make_env(**kwargs):
-    return BreakoutVecEnv(num_envs=4, num_threads=2, **kwargs)
+    return BreakoutVecEnv(GAME_ID, num_envs=4, num_threads=2, **kwargs)
 
 
 def test_public_package_exposes_distribution_version():
@@ -165,7 +167,8 @@ def test_breakout_contract_uses_the_canonical_turbo_provider_surface():
         observations, infos = env.reset()
         assert observations.shape == (4, 4, 84, 84)
         assert infos["state_index"].tolist() == [0] * 4
-        assert infos["start_source"].tolist() == ["environment"] * 4
+        assert infos["start_source"].dtype == np.int8
+        assert infos["start_source"].tolist() == [0] * 4
         actions = np.asarray(
             [
                 [0, 0, 0, 0, 0, 0, 0, 0],
@@ -182,7 +185,7 @@ def test_breakout_contract_uses_the_canonical_turbo_provider_surface():
 
 
 def test_stable_retro_button_rows_match_native_actions():
-    native = BreakoutVecEnv(num_envs=4, num_threads=1, frame_skip=1)
+    native = BreakoutVecEnv(GAME_ID, num_envs=4, num_threads=1, frame_skip=1)
     compatible = BreakoutVecEnv(
         "Breakout-Atari2600-v0",
         use_restricted_actions="filtered",
@@ -217,7 +220,7 @@ def test_canonical_registered_id_uses_stable_retro_action_space():
         observations, infos = env.reset()
         assert observations.shape == (2, 4, 84, 84)
         assert infos["state_index"].tolist() == [0, 0]
-        assert infos["start_source"].tolist() == ["environment", "environment"]
+        assert infos["start_source"].tolist() == [0, 0]
         assert env.single_action_space == gym.spaces.MultiBinary(8)
         env.step(np.zeros((2, 8), dtype=np.int8))
     finally:
@@ -227,7 +230,6 @@ def test_canonical_registered_id_uses_stable_retro_action_space():
 def test_state_catalog_uses_stable_retro_catalog_indices():
     env = BreakoutVecEnv(
         "Breakout-Atari2600-v0",
-        state="checker",
         state_catalog=("checker", "Start"),
         num_envs=2,
         num_threads=1,
@@ -238,7 +240,7 @@ def test_state_catalog_uses_stable_retro_catalog_indices():
         )
         assert env.state_catalog == ("checker", "Start")
         assert infos["state_index"].tolist() == [0, 1]
-        assert infos["start_source"].tolist() == ["environment", "environment"]
+        assert infos["start_source"].tolist() == [0, 0]
     finally:
         env.close()
 
@@ -280,9 +282,7 @@ def test_scalar_reset_seed_expands_by_lane_and_noops_change_the_fire_serve():
             ],
             dtype=np.uint32,
         )
-        np.testing.assert_array_equal(
-            reset_info["noop_reset_count"], expected_counts
-        )
+        np.testing.assert_array_equal(reset_info["noop_reset_count"], expected_counts)
         assert np.all(reset_info["ball_y"] == 0)
 
         _, _, _, _, noop_info = env.step(np.zeros(4, dtype=np.uint8))
@@ -291,9 +291,7 @@ def test_scalar_reset_seed_expands_by_lane_and_noops_change_the_fire_serve():
         _, _, _, _, fire_info = env.step(np.ones(4, dtype=np.uint8))
         serve_x = np.asarray([16, 78, 80, 142], dtype=np.int64)
         expected_x = serve_x[(expected_counts.astype(np.int64) + 3) & 3]
-        np.testing.assert_array_equal(
-            fire_info["ball_x"], expected_x * FIXED_POINT_ONE
-        )
+        np.testing.assert_array_equal(fire_info["ball_x"], expected_x * FIXED_POINT_ONE)
         assert np.all(fire_info["ball_y"] == 113)
     finally:
         env.close()
@@ -312,14 +310,9 @@ def test_masked_noop_resets_do_not_advance_other_lanes_random_streams():
 
         _, left_info = left.reset(options={"reset_mask": lane_one})
         _, right_info = right.reset(options={"reset_mask": lane_one})
-        assert (
-            left_info["noop_reset_count"][1]
-            == right_info["noop_reset_count"][1]
-        )
+        assert left_info["noop_reset_count"][1] == right_info["noop_reset_count"][1]
         assert left.get_state()[1] == right.get_state()[1]
-        np.testing.assert_array_equal(
-            left_info["_noop_reset_count"], lane_one
-        )
+        np.testing.assert_array_equal(left_info["_noop_reset_count"], lane_one)
     finally:
         left.close()
         right.close()
@@ -338,6 +331,83 @@ def test_fire_reset_remains_unavailable():
     assert parameters["render_mode"].default is None
     with pytest.raises(ValueError, match="use_fire_reset"):
         make_env(use_fire_reset=True)
+
+
+def test_turbo_v2_constructor_has_the_exact_shared_prefix():
+    parameters = inspect.signature(BreakoutVecEnv).parameters
+    assert tuple(parameters) == (
+        "game",
+        "state",
+        "scenario",
+        "info",
+        "use_restricted_actions",
+        "record",
+        "players",
+        "inttype",
+        "obs_type",
+        "render_mode",
+        "num_envs",
+        "num_threads",
+        "rom_path",
+        "transport",
+        "obs_copy",
+        "obs_resize",
+        "obs_crop",
+        "obs_crop_mode",
+        "obs_crop_fill",
+        "obs_grayscale",
+        "obs_resize_algorithm",
+        "obs_layout",
+        "frame_skip",
+        "frame_stack",
+        "maxpool_last_two",
+        "noop_reset_max",
+        "use_fire_reset",
+        "sticky_action_prob",
+        "reward_clip",
+        "info_filter",
+        "info_frame_stack_keys",
+        "state_catalog",
+    )
+    assert parameters["game"].default is inspect.Parameter.empty
+    assert tuple(parameter.default for parameter in parameters.values()) == (
+        inspect.Parameter.empty,
+        None,
+        None,
+        None,
+        "default",
+        False,
+        1,
+        "stable",
+        "image",
+        None,
+        1,
+        None,
+        None,
+        "default",
+        "safe_view",
+        (84, 84),
+        None,
+        "remove",
+        0,
+        True,
+        "area",
+        "chw",
+        4,
+        4,
+        False,
+        0,
+        False,
+        0.0,
+        False,
+        "all",
+        None,
+        None,
+    )
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        for parameter in tuple(parameters.values())[10:]
+    )
 
 
 @pytest.mark.parametrize("value", ["stable", "STABLE", 1, np.int64(1)])
@@ -387,7 +457,7 @@ def test_contract_is_chw_manual_and_no_maxpool():
     assert infos["_start_source"].all()
     assert BreakoutVecEnv.metadata["autoreset_mode"] is AutoresetMode.DISABLED
     assert "autoreset_mode" not in inspect.signature(BreakoutVecEnv).parameters
-    with pytest.raises(TypeError, match="unsupported option.*autoreset_mode"):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'autoreset_mode'"):
         make_env(autoreset_mode=AutoresetMode.DISABLED)
     with pytest.raises(ValueError, match="maxpool"):
         make_env(maxpool_last_two=True)
@@ -442,9 +512,7 @@ def test_snapshot_replay_is_byte_exact():
 def test_live_snapshots_support_masked_capture_cross_lane_fanout_and_replay():
     env = make_env(frame_skip=1)
     try:
-        env.reset(
-            options={"state_indices": np.asarray([0, 1, 2, 3], dtype=np.int32)}
-        )
+        env.reset(options={"state_indices": np.asarray([0, 1, 2, 3], dtype=np.int32)})
         env.step(np.asarray([1, 2, 3, 0], dtype=np.uint8))
         captured_states = env.get_state()
         handles = env.capture_snapshots(
@@ -472,12 +540,7 @@ def test_live_snapshots_support_masked_capture_cross_lane_fanout_and_replay():
         assert restored_states[2] == captured_states[0]
         assert restored_states[3] == unselected_before
         np.testing.assert_array_equal(restored_obs[0], restored_obs[2])
-        assert infos["start_source"].tolist() == [
-            "snapshot",
-            "environment",
-            "snapshot",
-            "environment",
-        ]
+        assert infos["start_source"].tolist() == [1, 0, 1, 0]
         np.testing.assert_array_equal(infos["_start_source"], mask)
 
         actions = np.asarray([3, 0, 3, 0], dtype=np.uint8)
@@ -537,7 +600,7 @@ def test_live_snapshot_lifecycle_owner_and_selector_validation_are_atomic():
 
 
 def test_live_snapshot_mask_validation_uses_consistent_error_categories():
-    env = BreakoutVecEnv(num_envs=2)
+    env = BreakoutVecEnv(GAME_ID, num_envs=2)
     try:
         env.reset()
         with pytest.raises(TypeError, match="NumPy array"):
@@ -686,19 +749,61 @@ def test_render_lane_rejects_invalid_indices_and_closed_environment():
         env.render()
 
 
-def test_turbo_api_v1_metadata_capabilities_and_rendering():
+def test_turbo_api_v2_metadata_capabilities_and_rendering():
     env = make_env(frame_skip=1, render_mode="rgb_array")
     try:
-        env.reset(seed=123)
-        assert env.metadata["turbo_api_version"] == 1
+        observations, infos = env.reset(seed=123)
+        assert env.metadata["turbo_api_version"] == 2
+        assert env.metadata["transition_transport"] == "numpy"
         assert env.observation_ownership == "safe_view"
         assert env.observation_buffer_depth == 2
         assert env.live_snapshots_deterministic is True
+        assert tuple(env.capabilities) == (
+            "supported_action_modes",
+            "supported_observation_layouts",
+            "supported_observation_color_modes",
+            "supported_resize_algorithms",
+            "supported_crop_modes",
+            "supported_observation_copy_modes",
+            "supported_transition_transports",
+            "supports_async_step",
+            "supports_branching",
+            "supports_device_api",
+            "supports_emulator_ram",
+            "supports_enemy_variants",
+            "supports_fire_reset",
+            "supports_info_frame_stack",
+            "supports_live_snapshots",
+            "supports_maxpool_last_two",
+            "supports_noop_reset",
+            "supports_per_lane_rgb",
+            "supports_reward_clipping",
+            "supports_snapshot_codec",
+            "supports_state_catalog",
+            "supports_sticky_action_prob",
+            "supports_surface_variants",
+        )
         assert env.capabilities["supported_action_modes"] == (
             "filtered",
             "custom_discrete",
         )
         assert tuple(env.signal_schema) == tuple(env._info_keys)
+        for name, spec in env.signal_schema.items():
+            assert isinstance(spec["dtype"], str)
+            assert isinstance(spec["shape"], tuple)
+            if spec["available_on_reset"]:
+                assert np.dtype(spec["dtype"]) == infos[name].dtype
+                assert infos[name].shape[1:] == spec["shape"]
+        with pytest.raises(TypeError, match="NumPy array"):
+            env.step([0] * env.num_envs)
+        transition = env.step(np.zeros(env.num_envs, dtype=np.int64))
+        for value in (
+            observations,
+            *transition[:4],
+            *infos.values(),
+            *transition[4].values(),
+        ):
+            assert value.dtype != np.dtype(object)
         images = env.get_images()
         assert len(images) == env.num_envs
         assert all(image.shape == (210, 160, 3) for image in images)
@@ -718,15 +823,24 @@ def test_rendering_is_disabled_by_default():
         env.close()
 
 
+def test_v2_shared_defaults_resolve_simple_chw_stack():
+    env = BreakoutVecEnv(GAME_ID)
+    try:
+        observations, infos = env.reset(seed=23)
+        assert observations.shape == (1, 4, 84, 84)
+        assert env.action_mode == "custom_discrete"
+        assert env.action_preset == "simple"
+        assert infos["state_index"].tolist() == [0]
+        assert env.render() is None
+    finally:
+        env.close()
+
+
 def test_legacy_reset_selector_names_are_rejected():
     env = make_env()
     try:
         with pytest.raises(ValueError, match="unsupported reset options"):
-            env.reset(
-                options={
-                    "start_indices": np.zeros(env.num_envs, dtype=np.int32)
-                }
-            )
+            env.reset(options={"start_indices": np.zeros(env.num_envs, dtype=np.int32)})
         with pytest.raises(ValueError, match="unsupported reset options"):
             env.reset(options={"start_ids": np.full(env.num_envs, "Start")})
     finally:
@@ -857,8 +971,8 @@ def test_frame_skip_matches_repeated_native_physics():
 
 
 def test_thread_count_does_not_change_trace():
-    serial = BreakoutVecEnv(num_envs=16, num_threads=1)
-    parallel = BreakoutVecEnv(num_envs=16, num_threads=8)
+    serial = BreakoutVecEnv(GAME_ID, num_envs=16, num_threads=1)
+    parallel = BreakoutVecEnv(GAME_ID, num_envs=16, num_threads=8)
     serial.reset()
     parallel.reset()
     rng = np.random.default_rng(1234)
@@ -908,7 +1022,9 @@ def test_incremental_observations_match_forced_full_rebuild(preprocessing):
 
 
 def test_optimized_hot_path_preserves_golden_observation_trace():
-    env = BreakoutVecEnv(num_envs=4, num_threads=1, frame_skip=4, frame_stack=4)
+    env = BreakoutVecEnv(
+        GAME_ID, num_envs=4, num_threads=1, frame_skip=4, frame_stack=4
+    )
     observation, _ = env.reset(options={"state_indices": np.arange(4, dtype=np.int32)})
     digest = hashlib.sha256(observation.tobytes())
     for step in range(100):

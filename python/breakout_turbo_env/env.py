@@ -86,7 +86,7 @@ def _is_stable_integration(value: Any) -> bool:
 
 
 def _normalize_game(game: str | None) -> str:
-    value = _CANONICAL_GAME if game is None else str(game)
+    value = str(game)
     if value != _CANONICAL_GAME:
         raise ValueError(f"game must be {_CANONICAL_GAME!r}")
     return _CANONICAL_GAME
@@ -98,15 +98,21 @@ def _canonical_start_id(value: Any) -> str:
 
 def _resolve_actions(value: Any):
     name = _enum_name(value)
-    if value is None or name == "none":
+    if value is None or name in {"default", "none"}:
         custom = resolve_custom_action("simple", tables=ACTION_TABLES)
         return "custom_discrete", "simple", custom
-    if name == "filtered" or value == 1:
+    if name == "filtered" or (
+        isinstance(value, (int, np.integer))
+        and not isinstance(value, (bool, np.bool_))
+        and int(value) == 1
+    ):
         return "filtered", None, None
     if name in {"all", "discrete", "multi_discrete"} or (
         isinstance(value, int) and value in {0, 2, 3}
     ):
-        raise ValueError(f"BreakoutVecEnv does not support built-in action mode {name!r}")
+        raise ValueError(
+            f"BreakoutVecEnv does not support built-in action mode {name!r}"
+        )
     custom = resolve_custom_action(value, tables=ACTION_TABLES)
     unsupported = [
         labels
@@ -210,17 +216,18 @@ class BreakoutVecEnv(VectorEnv):
         "autoreset_mode": AutoresetMode.DISABLED,
         "render_modes": ["rgb_array"],
         "render_fps": 60,
-        "turbo_api_version": 1,
+        "turbo_api_version": 2,
+        "transition_transport": "numpy",
     }
     supports_live_snapshots = True
 
     def __init__(
         self,
-        game: str | None = None,
+        game: str,
         state: str | None = None,
         scenario: str | None = None,
         info: str | None = None,
-        use_restricted_actions: Any | str | ActionTable = None,
+        use_restricted_actions: Any | str | ActionTable = "default",
         record: bool = False,
         players: int = 1,
         inttype: Any = "stable",
@@ -230,28 +237,32 @@ class BreakoutVecEnv(VectorEnv):
         num_envs: int = 1,
         num_threads: int | None = None,
         rom_path: str | None = None,
+        transport: str = "default",
+        obs_copy: str = "safe_view",
         obs_resize: tuple[int, int] = (84, 84),
         obs_crop: tuple[int, int, int, int] | None = None,
         obs_crop_mode: str = "remove",
         obs_crop_fill: int = 0,
+        obs_grayscale: bool = True,
         obs_resize_algorithm: str = "area",
+        obs_layout: str = "chw",
         frame_skip: int = 4,
         frame_stack: int = 4,
         maxpool_last_two: bool = False,
-        obs_layout: str = "chw",
-        obs_grayscale: bool = True,
-        obs_copy: str = "safe_view",
-        info_filter: str | Mapping[str, Any] = "all",
         noop_reset_max: int = 0,
         use_fire_reset: bool = False,
         sticky_action_prob: float = 0.0,
         reward_clip: bool = False,
+        info_filter: str | Mapping[str, Any] = "all",
+        info_frame_stack_keys: Sequence[str] | None = None,
         state_catalog: Sequence[str] | None = None,
-        **unsupported: Any,
     ):
-        if unsupported:
-            names = ", ".join(sorted(unsupported))
-            raise TypeError(f"unsupported option(s): {names}")
+        if transport == "default":
+            transport = "numpy"
+        if transport != "numpy":
+            raise ValueError("transport must be 'default' or 'numpy'")
+        if info_frame_stack_keys is not None:
+            raise ValueError("info_frame_stack_keys is unsupported and must be None")
         self.game = _normalize_game(game)
         action_mode, action_preset, custom_actions = _resolve_actions(
             use_restricted_actions
@@ -289,9 +300,8 @@ class BreakoutVecEnv(VectorEnv):
             sticky_action_prob=sticky_action_prob,
             reward_clip=reward_clip,
         )
-        requested_state = _canonical_start_id(state or "Start")
-        if requested_state not in _START_IDS:
-            raise ValueError(f"unknown state {state!r}; expected one of {_START_IDS}")
+        if state is not None and state_catalog is not None:
+            raise ValueError("state and state_catalog are mutually exclusive")
         configured_catalog = (
             _START_IDS
             if state_catalog is None
@@ -304,6 +314,9 @@ class BreakoutVecEnv(VectorEnv):
             raise ValueError("state_catalog must not be empty")
         if len(set(configured_catalog)) != len(configured_catalog):
             raise ValueError("state_catalog must contain unique states")
+        requested_state = (
+            _canonical_start_id(state) if state is not None else configured_catalog[0]
+        )
         if requested_state not in configured_catalog:
             raise ValueError("state must be present in state_catalog")
         self._default_start_index = configured_catalog.index(requested_state)
@@ -381,12 +394,15 @@ class BreakoutVecEnv(VectorEnv):
         self.observation_ownership = (
             "owned"
             if obs_copy == "copy"
-            else "unsafe_view" if obs_copy == "unsafe_view" else "safe_view"
+            else "unsafe_view"
+            if obs_copy == "unsafe_view"
+            else "safe_view"
         )
         self.observation_buffer_depth = (
             None if obs_copy == "copy" else 1 if obs_copy == "unsafe_view" else 2
         )
         self.autoreset_mode = AutoresetMode.DISABLED
+        self.transport = transport
         self.render_mode = render_mode
         self.state_catalog = configured_catalog
         if action_mode == "filtered":
@@ -455,26 +471,38 @@ class BreakoutVecEnv(VectorEnv):
             {
                 "supported_action_modes": ("filtered", "custom_discrete"),
                 "supported_observation_layouts": ("chw",),
+                "supported_observation_color_modes": ("grayscale",),
                 "supported_resize_algorithms": ("area",),
+                "supported_crop_modes": ("remove", "mask"),
                 "supported_observation_copy_modes": (
                     "copy",
                     "safe_view",
                     "unsafe_view",
                 ),
-                "supports_maxpool_last_two": False,
-                "supports_sticky_action_prob": False,
-                "supports_reward_clipping": False,
-                "supports_noop_reset": True,
-                "supports_state_catalog": True,
+                "supported_transition_transports": ("numpy",),
+                "supports_async_step": False,
+                "supports_branching": True,
+                "supports_device_api": False,
+                "supports_emulator_ram": False,
+                "supports_enemy_variants": False,
+                "supports_fire_reset": False,
+                "supports_info_frame_stack": False,
                 "supports_live_snapshots": True,
-                "supports_per_lane_rgb": True,
+                "supports_maxpool_last_two": False,
+                "supports_noop_reset": True,
+                "supports_per_lane_rgb": render_mode == "rgb_array",
+                "supports_reward_clipping": False,
+                "supports_snapshot_codec": False,
+                "supports_state_catalog": True,
+                "supports_sticky_action_prob": False,
+                "supports_surface_variants": False,
             }
         )
         self.signal_schema = MappingProxyType(
             {
                 key: MappingProxyType(
                     {
-                        "dtype": np.dtype(np.int64),
+                        "dtype": "int64",
                         "shape": (),
                         "available_on_reset": self._info_mode == "all",
                         "available_on_step": self._info_mode != "none",
@@ -554,10 +582,7 @@ class BreakoutVecEnv(VectorEnv):
         if np.any(snapshot_mask & ~mask):
             raise ValueError("snapshots may only be supplied for selected reset lanes")
         reset_seeds = _reset_seeds(seed, self.num_envs)
-        if any(
-            reset_seeds[lane] is not None
-            for lane in np.flatnonzero(snapshot_mask)
-        ):
+        if any(reset_seeds[lane] is not None for lane in np.flatnonzero(snapshot_mask)):
             raise ValueError("snapshot reset lanes cannot also specify a seed")
         starts = options.pop("state_indices", None)
         if starts is None:
@@ -638,17 +663,18 @@ class BreakoutVecEnv(VectorEnv):
         infos = self._infos(signals, mask.copy())
         infos["state_index"] = self._active_state_indices.copy()
         infos["_state_index"] = mask.copy()
-        start_source = np.full(self.num_envs, "environment", dtype=object)
-        start_source[snapshot_mask] = "snapshot"
+        start_source = snapshot_mask.astype(np.int8, copy=True)
         infos["start_source"] = start_source
         infos["_start_source"] = mask.copy()
-        infos["noop_reset_count"] = noop_counts
+        infos["noop_reset_count"] = noop_counts.astype(np.int64)
         infos["_noop_reset_count"] = static_mask.copy()
         return self._obs(observations), infos
 
     def step(self, actions):
         if self.closed:
             raise RuntimeError("cannot step a closed environment")
+        if not isinstance(actions, np.ndarray):
+            raise TypeError("actions must be a NumPy array")
         if not np.all(self._initialized):
             raise RuntimeError("all lanes must be reset before the first step")
         values = self._native_actions(actions)
@@ -754,9 +780,7 @@ class BreakoutVecEnv(VectorEnv):
             raise ValueError("restored state layout is absent from state_catalog")
 
         observations, rewards, terminated, truncated, signals = self._next_buffers()
-        self.native.set_states_into(
-            state_values, reset_mask, observations, signals
-        )
+        self.native.set_states_into(state_values, reset_mask, observations, signals)
         rewards[reset_mask] = 0.0
         terminated[reset_mask] = False
         truncated[reset_mask] = False
@@ -827,9 +851,7 @@ class BreakoutVecEnv(VectorEnv):
             return None
         indexed = np.frombuffer(
             self.native.render_indexed(lane_index), dtype=np.uint8
-        ).reshape(
-            RENDER_HEIGHT, RENDER_WIDTH
-        )
+        ).reshape(RENDER_HEIGHT, RENDER_WIDTH)
         return _ATARI_2600_NTSC_PALETTE[indexed]
 
     def render(self):

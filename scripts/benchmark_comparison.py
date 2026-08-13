@@ -74,6 +74,7 @@ def build_turbo(num_threads: int):
     from breakout_turbo_env import BreakoutVecEnv
 
     return BreakoutVecEnv(
+        game="Breakout-Atari2600-v0",
         num_envs=NUM_ENVS,
         num_threads=num_threads,
         obs_resize=(OBSERVATION_SIZE, OBSERVATION_SIZE),

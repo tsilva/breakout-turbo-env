@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 from breakout_turbo_env import ACTION_SETS, ACTION_TABLES, BreakoutVecEnv
 
+GAME_ID = "Breakout-Atari2600-v0"
+
 
 def test_packaged_metadata_is_available_and_defines_simple():
     metadata = resources.files("breakout_turbo_env").joinpath(
@@ -16,7 +18,9 @@ def test_packaged_metadata_is_available_and_defines_simple():
 
 
 def test_simple_preset_exposes_exact_discrete_contract():
-    env = BreakoutVecEnv(use_restricted_actions="simple", num_envs=4, num_threads=1)
+    env = BreakoutVecEnv(
+        GAME_ID, use_restricted_actions="simple", num_envs=4, num_threads=1
+    )
     try:
         assert env.action_preset == "simple"
         assert env.action_meanings == ("noop", "button", "right", "left")
@@ -28,6 +32,7 @@ def test_simple_preset_exposes_exact_discrete_contract():
 
 def test_inline_subset_and_reordering_map_to_native_commands():
     env = BreakoutVecEnv(
+        GAME_ID,
         use_restricted_actions=[["LEFT"], [], ["RIGHT"]],
         num_envs=3,
         num_threads=1,
@@ -46,17 +51,17 @@ def test_inline_subset_and_reordering_map_to_native_commands():
 )
 def test_unsupported_builtin_modes_are_rejected(value):
     with pytest.raises(ValueError, match="does not support"):
-        BreakoutVecEnv(use_restricted_actions=value)
+        BreakoutVecEnv(GAME_ID, use_restricted_actions=value)
 
 
 def test_unreproducible_button_combination_is_rejected():
     with pytest.raises(ValueError, match="cannot reproduce"):
-        BreakoutVecEnv(use_restricted_actions=[["BUTTON", "RIGHT"]])
+        BreakoutVecEnv(GAME_ID, use_restricted_actions=[["BUTTON", "RIGHT"]])
 
 
 def test_default_is_the_named_simple_custom_discrete_table():
-    default = BreakoutVecEnv(num_envs=1)
-    simple = BreakoutVecEnv(use_restricted_actions="simple", num_envs=1)
+    default = BreakoutVecEnv(GAME_ID, num_envs=1)
+    simple = BreakoutVecEnv(GAME_ID, use_restricted_actions="simple", num_envs=1)
     try:
         assert default.action_mode == "custom_discrete"
         assert default.action_preset == "simple"

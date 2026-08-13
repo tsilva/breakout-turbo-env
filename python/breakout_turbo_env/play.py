@@ -139,6 +139,7 @@ def run(
 
     pygame.init()
     env = BreakoutVecEnv(
+        game="Breakout-Atari2600-v0",
         num_envs=1,
         num_threads=1,
         frame_skip=frame_skip,
