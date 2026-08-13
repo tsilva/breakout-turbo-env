@@ -644,7 +644,11 @@ for module in ({IMPORT_NAME}, {EXTENSION_NAME}):
     assert module_path.is_relative_to(environment_root), (
         f"{{module.__name__}} imported from {{module_path}}, outside {{environment_root}}"
     )
-env = {IMPORT_NAME}.BreakoutVecEnv(num_envs=2, num_threads=1)
+env = {IMPORT_NAME}.BreakoutVecEnv(
+    game="Breakout-Atari2600-v0",
+    num_envs=2,
+    num_threads=1,
+)
 try:
     assert env.supports_live_snapshots is True
     obs, infos = env.reset()
@@ -664,7 +668,8 @@ try:
     }}
     restored, restored_infos = env.reset(options=reset_options)
     np.testing.assert_array_equal(restored[0], restored[1])
-    assert restored_infos["start_source"].tolist() == ["snapshot", "snapshot"]
+    assert restored_infos["start_source"].dtype == np.int8
+    assert restored_infos["start_source"].tolist() == [1, 1]
 
     replay_actions = np.asarray([3, 3], dtype=np.uint8)
     first = tuple(np.asarray(value).copy() for value in env.step(replay_actions)[:4])
