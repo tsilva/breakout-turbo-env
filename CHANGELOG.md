@@ -6,6 +6,12 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Added
+
+- Added the vector-only Gymnasium factory
+  `breakout_turbo_env:Breakout-Turbo-v0`, with an explicit `game` argument and
+  the native vector environment as its result.
+
 ## [0.5.3] - 2026-08-12
 
 ### Added

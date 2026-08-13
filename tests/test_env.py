@@ -3,7 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import inspect
+import os
 import pickle
+import subprocess
+import sys
+from pathlib import Path
 
 import breakout_turbo_env
 import gymnasium as gym
@@ -16,6 +20,7 @@ from breakout_turbo_env import (
     RENDER_WIDTH,
     BreakoutVecEnv,
 )
+from gymnasium.envs.registration import EnvSpec
 from gymnasium.vector import AutoresetMode
 
 
@@ -27,6 +32,81 @@ def test_public_package_exposes_distribution_version():
     assert breakout_turbo_env.__version__ == importlib.metadata.version(
         "breakout-turbo-env"
     )
+
+
+def test_generic_gymnasium_registration_is_vector_only_and_idempotent(monkeypatch):
+    spec = gym.spec(breakout_turbo_env.GYMNASIUM_ENV_ID)
+    assert spec.entry_point is None
+    assert spec.vector_entry_point == ("breakout_turbo_env:_make_gymnasium_vec_env")
+    assert spec.kwargs == {}
+    breakout_turbo_env._register_gymnasium_envs()
+
+    with pytest.raises(gym.error.Error, match="entry_point is not specified"):
+        gym.make(
+            breakout_turbo_env.GYMNASIUM_ENV_ID,
+            game="Breakout-Atari2600-v0",
+        )
+    with pytest.raises(TypeError, match="game"):
+        gym.make_vec(breakout_turbo_env.GYMNASIUM_ENV_ID, num_envs=1)
+
+    monkeypatch.setitem(
+        gym.registry,
+        breakout_turbo_env.GYMNASIUM_ENV_ID,
+        EnvSpec(
+            id=breakout_turbo_env.GYMNASIUM_ENV_ID,
+            entry_point=None,
+            vector_entry_point="tests:conflicting_factory",
+        ),
+    )
+    with pytest.raises(gym.error.Error, match="conflicting specification"):
+        breakout_turbo_env._register_gymnasium_envs()
+
+
+def test_module_qualified_gymnasium_id_registers_in_a_clean_process():
+    root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(root / "python"), env.get("PYTHONPATH")))
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            'exec("""import gymnasium as gym\n'
+            "assert 'Breakout-Turbo-v0' not in gym.registry\n"
+            "try:\n"
+            "    gym.make_vec(\n"
+            "        'breakout_turbo_env:Breakout-Turbo-v0', num_envs=1\n"
+            "    )\n"
+            "except TypeError as exc:\n"
+            "    assert 'game' in str(exc)\n"
+            "else:\n"
+            "    raise AssertionError('game was not required')\n"
+            "spec = gym.spec('Breakout-Turbo-v0')\n"
+            "assert spec.vector_entry_point == "
+            '\'breakout_turbo_env:_make_gymnasium_vec_env\'\n""")',
+        ],
+        check=True,
+        cwd=root,
+        env=env,
+    )
+
+
+def test_generic_gymnasium_factory_runs_native_vector_env():
+    env = gym.make_vec(
+        "breakout_turbo_env:Breakout-Turbo-v0",
+        game="Breakout-Atari2600-v0",
+        num_envs=2,
+        num_threads=1,
+    )
+    try:
+        assert isinstance(env, BreakoutVecEnv)
+        observations, _infos = env.reset(seed=7)
+        assert env.observation_space.contains(observations)
+        transition = env.step(np.zeros(2, dtype=np.uint8))
+        assert env.observation_space.contains(transition[0])
+    finally:
+        env.close()
 
 
 def test_registered_vector_entry_point_matches_declared_spaces():

@@ -31,14 +31,22 @@ left. Inline subsets and reorderings use the same console button labels, for
 example `[["LEFT"], [], ["RIGHT"]]`. Combinations the native kernel cannot
 reproduce are rejected.
 
-Importing the package registers the Stable Retro-compatible environment id:
+Use the generic, vector-only Gymnasium factory with an explicit game:
 
 ```python
 import gymnasium as gym
-import breakout_turbo_env  # registers the vector entry point
 
-env = gym.make_vec("Breakout-Atari2600-v0", num_envs=16, num_threads=8)
+env = gym.make_vec(
+    "breakout_turbo_env:Breakout-Turbo-v0",
+    game="Breakout-Atari2600-v0",
+    num_envs=16,
+    num_threads=8,
+)
 ```
+
+The module-qualified ID imports and registers the package. Importing the
+package also preserves the Stable Retro-compatible `Breakout-Atari2600-v0`
+vector ID.
 
 The canonical constructor accepts the same explicit Breakout fields used by
 Stable Retro Turbo. Options whose semantics cannot be reproduced fail

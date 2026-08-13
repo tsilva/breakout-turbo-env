@@ -46,10 +46,15 @@ make develop-release
 ## Use
 
 ```python
+import gymnasium as gym
 import numpy as np
-from breakout_turbo_env import BreakoutVecEnv
 
-env = BreakoutVecEnv(num_envs=4096, num_threads=8)
+env = gym.make_vec(
+    "breakout_turbo_env:Breakout-Turbo-v0",
+    game="Breakout-Atari2600-v0",
+    num_envs=4096,
+    num_threads=8,
+)
 obs, infos = env.reset()
 obs, rewards, terminated, truncated, infos = env.step(
     np.zeros(env.num_envs, dtype=np.uint8)
@@ -59,6 +64,10 @@ done = terminated | truncated
 if done.any():
     obs, reset_infos = env.reset(options={"reset_mask": done})
 ```
+
+The module-qualified ID imports the package and registers the factory. This ID
+is vector-only and requires an explicit `game`; `BreakoutVecEnv` remains
+available for direct use.
 
 ## Train with GradLab
 
@@ -126,8 +135,8 @@ obs, infos = env.reset(
 env.close()
 ```
 
-Importing the package registers the Stable Retro-compatible
-`Breakout-Atari2600-v0` environment. The complete lifecycle, configuration,
+Importing the package also preserves the Stable Retro-compatible
+`Breakout-Atari2600-v0` vector ID. The complete lifecycle, configuration,
 snapshot, and branching contract is in the
 [environment documentation](docs/environment.md).
 
