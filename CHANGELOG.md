@@ -6,6 +6,8 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.5.5] - 2026-08-13
+
 ### Changed
 
 - Migrated `BreakoutVecEnv` to Turbo Vector API v2 with the exact shared
@@ -196,6 +198,7 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.5.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.1...v0.5.2
