@@ -63,10 +63,12 @@ immediately.
   grayscale `uint8` values, four stacked frames, and four native frames per
   environment step.
 - Rendering is disabled by default. With `render_mode="rgb_array"`, `render()`
-  returns lane zero as the native 160×210 RGB frame and `render_lane(index)`
-  selects any lane. Rendering never advances the game and remains separate
-  from policy observations. Without that opt-in, both methods return `None`
-  and `get_images()` returns one `None` entry per lane.
+  returns lane zero as the canonical 160×210 Stella RGB frame and
+  `render_lane(index)` selects any lane. Original Stable Retro's BGR-labeled
+  RGB565 frame transport is normalized at this human-facing boundary only.
+  Rendering never advances the game and remains separate from policy
+  observations. Without that opt-in, both methods return `None` and
+  `get_images()` returns one `None` entry per lane.
 - Rewards are score deltas. Brick rows score `7, 7, 4, 4, 1, 1` from top to
   bottom. There is no life-loss penalty or board-clear reward.
 - Clearing the wall does not end the episode. Termination follows the five-life

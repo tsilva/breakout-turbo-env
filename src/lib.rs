@@ -782,9 +782,9 @@ fn render_indexed(lane: &Lane) -> Vec<u8> {
 }
 
 fn palette_gray(index: u8) -> u8 {
-    // Stable Retro converts Stella's RGB565 channel bytes with the integer
-    // luminance formula (77R + 150G + 29B + 128) >> 8.  These are the
-    // precomputed results for the indexed palette returned by render_indexed.
+    // Preserve Stable Retro's raw BGR-labeled RGB565 bytes and integer
+    // luminance formula (77R + 150G + 29B + 128) >> 8 for policy parity.
+    // Human-facing rendering separately exposes transport-normalized RGB.
     match index {
         0 => 0,
         1 => 142,
@@ -2034,8 +2034,8 @@ mod parity_tests {
     use super::*;
 
     #[test]
-    fn policy_grayscale_matches_stable_retro_rgb565_luminance() {
-        let stable_retro_authority_palette = [
+    fn policy_grayscale_preserves_stable_retro_raw_transport_luminance() {
+        let stable_retro_raw_transport_palette = [
             [0_u8, 0, 0],
             [142, 142, 142],
             [72, 72, 200],
@@ -2047,13 +2047,18 @@ mod parity_tests {
             [130, 158, 66],
         ];
 
-        for (index, [red, green, blue]) in stable_retro_authority_palette.into_iter().enumerate() {
+        for (index, [red, green, blue]) in
+            stable_retro_raw_transport_palette.into_iter().enumerate()
+        {
             let expected =
                 ((u32::from(red) * 77 + u32::from(green) * 150 + u32::from(blue) * 29 + 128) >> 8)
                     as u8;
             assert_eq!(palette_gray(index as u8), expected);
         }
-        assert_eq!(palette_gray(stable_retro_authority_palette.len() as u8), 0);
+        assert_eq!(
+            palette_gray(stable_retro_raw_transport_palette.len() as u8),
+            0
+        );
     }
 
     fn active_lane() -> Lane {

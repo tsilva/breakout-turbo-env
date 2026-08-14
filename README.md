@@ -181,8 +181,10 @@ Append `--help` to the player or benchmark command for its options.
   lifecycle, physics, raster, rewards, collision behavior, and public trajectory
   values. In particular, `ball_y` uses the Atari RAM convention where zero
   means the serve is waiting for FIRE. Opt into raw frames with
-  `render_mode="rgb_array"`; `render()` then returns lane zero's RGB frame while
-  `render_lane(index)` selects any lane, separately from policy observations.
+  `render_mode="rgb_array"`; `render()` then returns lane zero's canonical Stella
+  RGB frame while `render_lane(index)` selects any lane, separately from policy
+  observations. Original Stable Retro's BGR-labeled RGB565 frame transport is
+  normalized only at this human-facing boundary.
 - Live validation requires a separately obtained lawful ROM. The TurboBench
   semantic oracle pins original `stable-retro==1.0.1` as the authority; the
   sibling `stable-retro-turbo` differential remains a secondary regression

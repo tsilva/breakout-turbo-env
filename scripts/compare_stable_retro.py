@@ -18,8 +18,22 @@ from typing import Any
 
 import numpy as np
 
-RED = np.array([72, 72, 200], dtype=np.uint8)
+STABLE_RETRO_RAW_RED = np.array([72, 72, 200], dtype=np.uint8)
 GAME = "Breakout-Atari2600-v0"
+
+
+def canonicalize_stable_retro_frame(frame: np.ndarray) -> np.ndarray:
+    """Normalize Stable Retro's mislabeled BGR/RGB565 transport to Stella RGB."""
+    canonical = np.asarray(frame, dtype=np.uint8)[..., ::-1].copy()
+    canonical &= np.array([0xF8, 0xFC, 0xF8], dtype=np.uint8)
+    corrections = {
+        (136, 140, 136): (136, 136, 136),
+        (192, 108, 56): (192, 104, 56),
+        (64, 156, 128): (64, 152, 128),
+    }
+    for source, target in corrections.items():
+        canonical[np.all(canonical == source, axis=2)] = target
+    return canonical
 
 
 @dataclass(frozen=True)
@@ -54,12 +68,14 @@ class EpisodeResult:
 def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     padded = np.pad(mask.astype(np.int8), (1, 1))
     edges = np.diff(padded)
-    return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True))
+    return list(
+        zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True)
+    )
 
 
 def find_ball(frame: np.ndarray, *, min_y: int = 32, max_y: int = 188) -> Point | None:
     """Find an isolated 2x4 Atari-red sprite outside the brick bands."""
-    red = np.all(frame == RED, axis=2)
+    red = np.all(frame == STABLE_RETRO_RAW_RED, axis=2)
     for y in range(min_y, max_y - 3):
         starts = _runs(red[y])
         for x0, x1 in starts:
@@ -73,7 +89,7 @@ def find_ball(frame: np.ndarray, *, min_y: int = 32, max_y: int = 188) -> Point 
 
 def find_paddle_x(frame: np.ndarray) -> int:
     """Return the left edge of the active 16x4 red paddle sprite."""
-    red = np.all(frame[190] == RED, axis=1)
+    red = np.all(frame[190] == STABLE_RETRO_RAW_RED, axis=1)
     candidates = [(x0, x1) for x0, x1 in _runs(red) if x0 < 152 and x1 - x0 >= 16]
     if not candidates:
         raise RuntimeError("could not locate the Stable Retro paddle")
@@ -91,7 +107,9 @@ def ram_index_to_address(memory: Any, index: int) -> int:
     raise IndexError(f"RAM index {index} is outside registered memory blocks")
 
 
-def discover_coordinates(env: Any, *, samples_needed: int = 100) -> tuple[int, int, int, int, int]:
+def discover_coordinates(
+    env: Any, *, samples_needed: int = 100
+) -> tuple[int, int, int, int, int]:
     """Discover ball/paddle RAM addresses and screen offsets from live motion."""
     frame, _ = env.reset()
     action = np.zeros(env.action_space.shape, dtype=np.int8)
@@ -101,11 +119,15 @@ def discover_coordinates(env: Any, *, samples_needed: int = 100) -> tuple[int, i
         frame, _, terminated, _, info = env.step(action)
         action[0] = 0
         if terminated:
-            raise RuntimeError("reference game ended while discovering ball coordinates")
+            raise RuntimeError(
+                "reference game ended while discovering ball coordinates"
+            )
         ball_y = int(info["ball_y"])
         point = find_ball(frame, min_y=96, max_y=180)
         if point is not None and ball_y > 0:
-            observations.append((env.get_ram().copy(), point, ball_y, find_paddle_x(frame)))
+            observations.append(
+                (env.get_ram().copy(), point, ball_y, find_paddle_x(frame))
+            )
             if len(observations) >= samples_needed:
                 break
         # Keep the paddle under the ball so coordinate discovery survives a
@@ -157,6 +179,10 @@ class StableReference:
 
         self._retro = retro
         self._data_dir = data_dir
+        # Source checkouts do not necessarily place their integration data at
+        # the compiled extension's default data path. Register the containing
+        # integration directory so the already-validated ROM is discoverable.
+        retro.data.add_custom_integration(str(data_dir.parent))
         self._base_info = data_dir / "data.json"
         self._scenario = data_dir / "scenario.json"
         self._temporary = tempfile.TemporaryDirectory(prefix="breakout-parity-")
@@ -176,12 +202,21 @@ class StableReference:
             render_mode="rgb_array",
         )
         try:
-            address, self.x_offset, self.y_offset, paddle_address, self.paddle_offset = discover_coordinates(discovery)
+            (
+                address,
+                self.x_offset,
+                self.y_offset,
+                paddle_address,
+                self.paddle_offset,
+            ) = discover_coordinates(discovery)
         finally:
             discovery.close()
 
         data = discovery_data
-        data.setdefault("info", {})["ball_x_probe"] = {"address": address, "type": "|u1"}
+        data.setdefault("info", {})["ball_x_probe"] = {
+            "address": address,
+            "type": "|u1",
+        }
         data["info"]["paddle_x_probe"] = {"address": paddle_address, "type": "|u1"}
         self._info_path = Path(self._temporary.name) / "data.json"
         self._info_path.write_text(json.dumps(data))
@@ -237,14 +272,20 @@ class StableReference:
             point = self.point()
             if previous is not None:
                 dx, dy = point.x - previous.x, point.y - previous.y
-                if np.sign(dx) == dx_sign and np.sign(dy) == dy_sign and 100 <= point.y <= 160:
+                if (
+                    np.sign(dx) == dx_sign
+                    and np.sign(dy) == dy_sign
+                    and 100 <= point.y <= 160
+                ):
                     return bytes(self.env.em.get_state())
             previous = point
             try:
                 paddle_x = find_paddle_x(frame)
             except RuntimeError:
                 continue
-            action = self.action(-1 if point.x < paddle_x + 6 else 1 if point.x > paddle_x + 10 else 0)
+            action = self.action(
+                -1 if point.x < paddle_x + 6 else 1 if point.x > paddle_x + 10 else 0
+            )
         raise RuntimeError(f"could not find flight direction ({dx_sign}, {dy_sign})")
 
     def force(self, state: bytes, point: Point) -> None:
@@ -274,7 +315,9 @@ class StableReference:
         return int(self.env.data.lookup_value("lives"))
 
 
-def compare_corner(reference: StableReference, corner: str, frames: int) -> list[Transition]:
+def compare_corner(
+    reference: StableReference, corner: str, frames: int
+) -> list[Transition]:
     from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
 
     if corner == "top-left":
@@ -287,6 +330,7 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
     reference.force(state, start)
 
     turbo = BreakoutVecEnv(
+        GAME,
         num_envs=1,
         num_threads=1,
         frame_skip=1,
@@ -311,7 +355,9 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
     try:
         for index in range(frames):
             _, stable_reward, _, _, _ = reference.env.step(reference.action())
-            _, turbo_reward, _, _, turbo_info = turbo.step(np.array([0], dtype=np.uint8))
+            _, turbo_reward, _, _, turbo_info = turbo.step(
+                np.array([0], dtype=np.uint8)
+            )
             stable_point = reference.point()
             turbo_point = Point(
                 int(turbo_info["ball_x"][0] // FIXED_POINT_ONE),
@@ -322,8 +368,14 @@ def compare_corner(reference: StableReference, corner: str, frames: int) -> list
                     frame=index + 1,
                     stable=stable_point,
                     turbo=turbo_point,
-                    stable_delta=Point(stable_point.x - stable_previous.x, stable_point.y - stable_previous.y),
-                    turbo_delta=Point(turbo_point.x - turbo_previous.x, turbo_point.y - turbo_previous.y),
+                    stable_delta=Point(
+                        stable_point.x - stable_previous.x,
+                        stable_point.y - stable_previous.y,
+                    ),
+                    turbo_delta=Point(
+                        turbo_point.x - turbo_previous.x,
+                        turbo_point.y - turbo_previous.y,
+                    ),
                     stable_reward=float(stable_reward),
                     turbo_reward=float(turbo_reward[0]),
                 )
@@ -359,6 +411,7 @@ def compare_episode(
     reference.reopen()
     stable_frame, stable_info = reference.env.reset()
     turbo = BreakoutVecEnv(
+        GAME,
         num_envs=1,
         num_threads=1,
         frame_skip=1,
@@ -379,10 +432,13 @@ def compare_episode(
         stable_truncated: bool,
         turbo_truncated: bool,
     ) -> dict[str, Any] | None:
-        different = np.any(stable_frame != turbo_frame, axis=2)
+        stable_rgb = canonicalize_stable_retro_frame(stable_frame)
+        different = np.any(stable_rgb != turbo_frame, axis=2)
         pixel_count = int(np.count_nonzero(different))
         reward_differs = float(stable_reward) != float(turbo_reward)
-        terminal_differs = stable_terminated != turbo_terminated or stable_truncated != turbo_truncated
+        terminal_differs = (
+            stable_terminated != turbo_terminated or stable_truncated != turbo_truncated
+        )
         stable_score = reference.score()
         turbo_score = int(turbo_info["score"][0])
         stable_lives = reference.lives()
@@ -402,7 +458,7 @@ def compare_episode(
         if pixel_count:
             ys, xs = np.where(different)
             bbox = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
-            stable_colors = np.unique(stable_frame[ys, xs], axis=0).astype(int).tolist()
+            stable_colors = np.unique(stable_rgb[ys, xs], axis=0).astype(int).tolist()
             turbo_colors = np.unique(turbo_frame[ys, xs], axis=0).astype(int).tolist()
         return {
             "frame": frame,
@@ -446,7 +502,9 @@ def compare_episode(
             elif policy == "tracking":
                 ball_x = reference.point().x
                 paddle_x = reference.paddle_x()
-                direction = -1 if ball_x < paddle_x + 6 else 1 if ball_x > paddle_x + 10 else 0
+                direction = (
+                    -1 if ball_x < paddle_x + 6 else 1 if ball_x > paddle_x + 10 else 0
+                )
             elif policy == "predictive":
                 ball_x = float(turbo_info["ball_x"][0]) / FIXED_POINT_ONE
                 ball_y = float(turbo_info["ball_y"][0] - reference.y_offset)
@@ -455,17 +513,26 @@ def compare_episode(
                 paddle_x = float(turbo_info["paddle_x"][0]) / FIXED_POINT_ONE
                 target = paddle_x
                 if ball_vy > 0:
-                    target = reflect_playfield_x(ball_x + ball_vx * (186 - ball_y) / ball_vy) - aim
+                    target = (
+                        reflect_playfield_x(ball_x + ball_vx * (186 - ball_y) / ball_vy)
+                        - aim
+                    )
                 direction = -1 if target < paddle_x else 1 if target > paddle_x else 0
             elif policy == "random":
                 direction = int(rng.integers(-1, 2))
             else:
                 raise ValueError(policy)
 
-            turbo_action = 1 if fire else 3 if direction < 0 else 2 if direction > 0 else 0
-            stable_frame, stable_reward, stable_terminated, stable_truncated, stable_info = reference.env.step(
-                reference.action(direction, fire=fire)
+            turbo_action = (
+                1 if fire else 3 if direction < 0 else 2 if direction > 0 else 0
             )
+            (
+                stable_frame,
+                stable_reward,
+                stable_terminated,
+                stable_truncated,
+                stable_info,
+            ) = reference.env.step(reference.action(direction, fire=fire))
             _, turbo_reward, turbo_terminated, turbo_truncated, turbo_info = turbo.step(
                 np.asarray([turbo_action], dtype=np.uint8)
             )
@@ -521,13 +588,25 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stable-repo", type=Path, default=default_stable)
     parser.add_argument("--mode", choices=("corners", "episodes", "all"), default="all")
-    parser.add_argument("--scenario", choices=("top-left", "top-right", "both"), default="both")
+    parser.add_argument(
+        "--scenario", choices=("top-left", "top-right", "both"), default="both"
+    )
     parser.add_argument("--frames", type=int, default=12)
-    parser.add_argument("--policy", choices=("tracking", "predictive", "random", "all"), default="all")
-    parser.add_argument("--aims", default="4,6,8,10,12", help="comma-separated predictive paddle offsets")
-    parser.add_argument("--seeds", default="0,1,2", help="comma-separated random-policy seeds")
+    parser.add_argument(
+        "--policy", choices=("tracking", "predictive", "random", "all"), default="all"
+    )
+    parser.add_argument(
+        "--aims",
+        default="4,6,8,10,12",
+        help="comma-separated predictive paddle offsets",
+    )
+    parser.add_argument(
+        "--seeds", default="0,1,2", help="comma-separated random-policy seeds"
+    )
     parser.add_argument("--max-frames", type=int, default=8000)
-    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
     return parser.parse_args()
 
 
@@ -542,11 +621,18 @@ def main() -> int:
         if not (data_dir / name).is_file()
     ]
     if missing:
-        raise SystemExit(f"Stable Retro reference data is incomplete: {', '.join(missing)}")
+        raise SystemExit(
+            f"Stable Retro reference data is incomplete: {', '.join(missing)}"
+        )
     reference = StableReference(data_dir)
-    scenarios = ("top-left", "top-right") if args.scenario == "both" else (args.scenario,)
+    scenarios = (
+        ("top-left", "top-right") if args.scenario == "both" else (args.scenario,)
+    )
     report: dict[str, Any] = {
-        "coordinate_discovery": {"x_offset": reference.x_offset, "y_offset": reference.y_offset},
+        "coordinate_discovery": {
+            "x_offset": reference.x_offset,
+            "y_offset": reference.y_offset,
+        },
         "scenarios": {},
         "corners_exact": True,
         "episodes": [],
@@ -554,7 +640,10 @@ def main() -> int:
     try:
         if args.mode in ("corners", "all"):
             for scenario in scenarios:
-                report["scenarios"][scenario] = [asdict(row) for row in compare_corner(reference, scenario, args.frames)]
+                report["scenarios"][scenario] = [
+                    asdict(row)
+                    for row in compare_corner(reference, scenario, args.frames)
+                ]
             report["corners_exact"] = all(
                 row["stable"] == row["turbo"]
                 and row["stable_delta"] == row["turbo_delta"]
@@ -565,17 +654,35 @@ def main() -> int:
         if args.mode in ("episodes", "all"):
             if args.policy in ("tracking", "all"):
                 report["episodes"].append(
-                    asdict(compare_episode(reference, policy="tracking", max_frames=args.max_frames))
+                    asdict(
+                        compare_episode(
+                            reference, policy="tracking", max_frames=args.max_frames
+                        )
+                    )
                 )
             if args.policy in ("predictive", "all"):
                 for aim in (int(value) for value in args.aims.split(",") if value):
                     report["episodes"].append(
-                        asdict(compare_episode(reference, policy="predictive", aim=aim, max_frames=args.max_frames))
+                        asdict(
+                            compare_episode(
+                                reference,
+                                policy="predictive",
+                                aim=aim,
+                                max_frames=args.max_frames,
+                            )
+                        )
                     )
             if args.policy in ("random", "all"):
                 for seed in (int(value) for value in args.seeds.split(",") if value):
                     report["episodes"].append(
-                        asdict(compare_episode(reference, policy="random", seed=seed, max_frames=args.max_frames))
+                        asdict(
+                            compare_episode(
+                                reference,
+                                policy="random",
+                                seed=seed,
+                                max_frames=args.max_frames,
+                            )
+                        )
                     )
     finally:
         reference.close()

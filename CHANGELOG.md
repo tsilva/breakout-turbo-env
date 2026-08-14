@@ -6,6 +6,12 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Fixed
+
+- Restored canonical Stella RGB colors for human rendering and playback by
+  normalizing Stable Retro's BGR-labeled frame transport, while preserving the
+  byte-identical Stable Retro policy-observation path.
+
 ## [0.5.5] - 2026-08-13
 
 ### Changed

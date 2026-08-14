@@ -48,6 +48,43 @@ def test_packaged_action_table_uses_original_stable_retro_button_names():
     }
 
 
+def test_stable_retro_transport_normalization_recovers_canonical_stella_rgb():
+    from compare_stable_retro import canonicalize_stable_retro_frame
+
+    raw_palette = np.array(
+        [
+            [0, 0, 0],
+            [142, 142, 142],
+            [72, 72, 200],
+            [58, 108, 198],
+            [48, 122, 180],
+            [42, 162, 162],
+            [72, 160, 72],
+            [200, 72, 66],
+            [130, 158, 66],
+        ],
+        dtype=np.uint8,
+    ).reshape(1, 9, 3)
+    expected = np.array(
+        [
+            [0, 0, 0],
+            [136, 136, 136],
+            [200, 72, 72],
+            [192, 104, 56],
+            [176, 120, 48],
+            [160, 160, 40],
+            [72, 160, 72],
+            [64, 72, 200],
+            [64, 152, 128],
+        ],
+        dtype=np.uint8,
+    ).reshape(1, 9, 3)
+
+    np.testing.assert_array_equal(
+        canonicalize_stable_retro_frame(raw_palette), expected
+    )
+
+
 def _missing_reference_reason() -> str | None:
     missing = [str(path) for path in REQUIRED_REFERENCE_FILES if not path.is_file()]
     if missing:
@@ -125,13 +162,10 @@ def test_policy_observations_match_live_cartridge(stable_reference):
     from breakout_turbo_env import BreakoutVecEnv
 
     def policy_frame(frame):
+        # Preserve Stable Retro's raw BGR-labeled byte path: the renderer's
+        # human-facing transport normalization must not alter policy inputs.
         rgb = np.asarray(frame, dtype=np.uint16)
-        grayscale = (
-            rgb[..., 0] * 77
-            + rgb[..., 1] * 150
-            + rgb[..., 2] * 29
-            + 128
-        ) >> 8
+        grayscale = (rgb[..., 0] * 77 + rgb[..., 1] * 150 + rgb[..., 2] * 29 + 128) >> 8
         grayscale[:17] = 0
         resized = np.empty((84, 84), dtype=np.uint8)
         for output_y in range(84):
@@ -141,9 +175,7 @@ def test_policy_observations_match_live_cartridge(stable_reference):
                 source_x0 = output_x * 160 // 84
                 source_x1 = max((output_x + 1) * 160 // 84, source_x0 + 1)
                 region = grayscale[source_y0:source_y1, source_x0:source_x1]
-                resized[output_y, output_x] = (
-                    region.sum(dtype=np.uint32) // region.size
-                )
+                resized[output_y, output_x] = region.sum(dtype=np.uint32) // region.size
         return resized
 
     stable_reference.reopen()
@@ -232,13 +264,12 @@ def test_policy_observations_match_live_cartridge(stable_reference):
         turbo.close()
 
 
-def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
+def test_seeded_reset_noops_match_live_cartridge_render_frames(stable_reference):
     from breakout_turbo_env import BreakoutVecEnv
+    from compare_stable_retro import canonicalize_stable_retro_frame
 
     seed = 7
-    expected_noops = int(
-        np.random.default_rng(seed).integers(1, 31, dtype=np.uint64)
-    )
+    expected_noops = int(np.random.default_rng(seed).integers(1, 31, dtype=np.uint64))
     stable_reference.reopen()
     stable_frame, stable_info = stable_reference.env.reset()
     noop = stable_reference.action()
@@ -262,7 +293,9 @@ def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
     try:
         _, turbo_info = turbo.reset(seed=[seed])
         assert int(turbo_info["noop_reset_count"][0]) == expected_noops
-        np.testing.assert_array_equal(turbo.render(), stable_frame)
+        np.testing.assert_array_equal(
+            turbo.render(), canonicalize_stable_retro_frame(stable_frame)
+        )
         for key in ("ball_y", "lives", "score"):
             np.testing.assert_array_equal(turbo_info[key], [stable_info[key]])
 
@@ -276,7 +309,9 @@ def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
         _, turbo_reward, turbo_terminated, turbo_truncated, turbo_info = turbo.step(
             fire[np.newaxis, :]
         )
-        np.testing.assert_array_equal(turbo.render(), stable_frame)
+        np.testing.assert_array_equal(
+            turbo.render(), canonicalize_stable_retro_frame(stable_frame)
+        )
         np.testing.assert_array_equal(turbo_reward, [stable_reward])
         np.testing.assert_array_equal(turbo_terminated, [terminated])
         np.testing.assert_array_equal(turbo_truncated, [truncated])
@@ -286,9 +321,7 @@ def test_seeded_reset_noops_match_live_cartridge_raw_frames(stable_reference):
         turbo.close()
 
 
-@pytest.mark.skip(
-    reason="mutates RAM/state beyond the public semantic-oracle contract"
-)
+@pytest.mark.skip(reason="mutates RAM/state beyond the public semantic-oracle contract")
 def test_live_cartridge_has_two_walls_864_top_score_and_lives_only_done(
     stable_reference,
 ):
