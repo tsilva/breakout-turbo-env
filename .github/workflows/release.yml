@@ -16,11 +16,7 @@ on:
         required: true
         type: string
 
-permissions:
-  actions: read
-  attestations: read
-  contents: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: publish-v${{ inputs.version }}
@@ -28,11 +24,16 @@ concurrency:
 
 jobs:
   publish:
-    name: Verify, publish, tag, and release
+    name: Verify and publish
     runs-on: ubuntu-24.04
     environment:
       name: pypi
       url: https://pypi.org/p/breakout-turbo-env
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+      id-token: write
     steps:
       - name: Validate immutable inputs
         shell: bash
@@ -44,6 +45,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.commit }}
 
@@ -145,6 +147,42 @@ jobs:
           done
           exit 1
 
+      - name: Render release notes
+        run: |
+          .venv/bin/python scripts/release_notes.py \
+            --version "${{ inputs.version }}" > release-notes.md
+
+      - name: Store verified release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-release-v${{ inputs.version }}
+          path: |
+            candidate/
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create tag and GitHub release
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.commit }}
+
+      - name: Download verified release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-release-v${{ inputs.version }}
+          path: verified-release
+
       - name: Create tag and release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,24 +198,24 @@ jobs:
               -f ref="refs/tags/$tag" \
               -f sha="${{ inputs.commit }}"
           fi
-          .venv/bin/python scripts/release_notes.py \
-            --version "${{ inputs.version }}" > release-notes.md
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             mkdir published-release
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
               --dir published-release
-            for asset in candidate/dist/* candidate/SHA256SUMS \
-              candidate/release-manifest.json candidate/sbom.spdx.json; do
+            for asset in verified-release/candidate/dist/* \
+              verified-release/candidate/SHA256SUMS \
+              verified-release/candidate/release-manifest.json \
+              verified-release/candidate/sbom.spdx.json; do
               cmp "$asset" "published-release/$(basename "$asset")"
             done
           else
             gh release create "$tag" \
-              candidate/dist/* \
-              candidate/SHA256SUMS \
-              candidate/release-manifest.json \
-              candidate/sbom.spdx.json \
+              verified-release/candidate/dist/* \
+              verified-release/candidate/SHA256SUMS \
+              verified-release/candidate/release-manifest.json \
+              verified-release/candidate/sbom.spdx.json \
               --repo "$GITHUB_REPOSITORY" \
               --title "breakout-turbo-env $tag" \
-              --notes-file release-notes.md \
+              --notes-file verified-release/release-notes.md \
               --verify-tag
           fi
