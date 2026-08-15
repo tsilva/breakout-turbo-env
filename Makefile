@@ -42,7 +42,8 @@ test-stable-retro: develop-release
 	$(PYTHON) -m pytest -m stable_retro tests/test_stable_retro_parity.py $(PYTEST_ARGS)
 
 test-semantic-oracle:
-	@output="$(ORACLE_OUTPUT)"; \
+	@set -e; \
+	output="$(ORACLE_OUTPUT)"; \
 	if [ -z "$$output" ]; then output="$$(mktemp -d)/breakout-semantic-oracle"; fi; \
 	$(TURBOBENCH) oracle breakout/start-v2 \
 		--left stable-retro@1.0.1 \
