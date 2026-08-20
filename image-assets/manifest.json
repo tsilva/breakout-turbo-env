@@ -16,8 +16,8 @@
     {
       "key": "root-logo",
       "path": "../logo.png",
-      "width": 908,
-      "height": 885
+      "width": 1610,
+      "height": 977
     },
     {
       "key": "favicon-16",
@@ -40,8 +40,8 @@
     {
       "key": "favicon-ico",
       "path": "web-seo/favicon/favicon.ico",
-      "width": 16,
-      "height": 16
+      "width": 48,
+      "height": 48
     },
     {
       "key": "apple-touch-icon",
