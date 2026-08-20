@@ -1,9 +1,10 @@
 ## PROJECT PURPOSE
 
-breakout-turbo-env is a Python library for reinforcement-learning researchers and engineers that runs many independent Breakout games through a Gymnasium-compatible vector-environment API while preserving deterministic, reproducible transitions.
+`env-BreakoutAtari2600-turbo-native` is a Python library for reinforcement-learning researchers and engineers that runs many independent Breakout games through a Gymnasium-compatible vector-environment API while preserving deterministic, reproducible transitions.
 
 ## PROJECT REQUIREMENTS
 
+- Publish the Python distribution as `env-breakoutatari2600-turbo-native` while preserving the public `breakout_turbo_env` import package.
 - Given the same environment configuration, starting state, and action sequence, the environment must produce identical transition outputs.
 - The vector environment must step every game from one batched action input and return observations and transition results that conform to its declared Gymnasium spaces.
 - The environment must never automatically reset a terminal game; callers must be able to reset selected games without changing unselected games.
@@ -11,7 +12,7 @@ breakout-turbo-env is a Python library for reinforcement-learning researchers an
 - The environment must expose visual rendering separately from the processed observations supplied to policies.
 - The human-facing render must reproduce Stable Retro's native Atari 2600 Breakout frame geometry and Stella palette while remaining separate from policy observations.
 - The canonical `Breakout-Atari2600-v0` `Start` state must reproduce Stable Retro's state at 160×210 pixels, including its 18×6 brick wall, 2×4 ball, initially 16×4 ceiling-narrowing paddle, five-life counter, FIRE-gated serves, paddle inertia, delayed collision latches, breakthrough speed, score raster, scanline priority, and wall/corner behavior.
-- Callers must be able to replace Stable Retro Turbo with breakout-turbo-env for `Breakout-Atari2600-v0` without changing the game, start, observation, action, reward, reset, termination, truncation, or information contract; equivalent seeds may produce different stochastic traces but not different semantics.
+- Callers must be able to replace Stable Retro Turbo with `env-BreakoutAtari2600-turbo-native` for `Breakout-Atari2600-v0` without changing the game, start, observation, action, reward, reset, termination, truncation, or information contract; equivalent seeds may produce different stochastic traces but not different semantics.
 - Every externally observable canonical-start trajectory detail must match the same Atari ROM trajectory running through the pinned original Stable Retro release under equivalent configuration and actions, including canonical RGB frame geometry and content after transport normalization, policy observations, rewards, score, lives, termination, truncation, and shared info values; Stable Retro Turbo remains a secondary compatibility target, and changes must be acceptance-tested side by side against both providers.
 - Native actions must be `0` noop, `1` FIRE, `2` right, and `3` left.
 - `use_restricted_actions` must accept the game-owned `simple` table and exact caller-supplied subsets or reorderings of reproducible Atari button commands, while rejecting commands the native kernel cannot reproduce.

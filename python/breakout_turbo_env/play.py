@@ -134,7 +134,7 @@ def run(
     except ImportError as exc:
         raise SystemExit(
             "interactive play requires the play extra; "
-            "install `breakout-turbo-env[play]`"
+            "install `env-breakoutatari2600-turbo-native[play]`"
         ) from exc
 
     pygame.init()

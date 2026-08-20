@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
-REPOSITORY_URL = "https://github.com/tsilva/breakout-turbo-env"
+REPOSITORY_URL = "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
 
 
 def _section_body(changelog: str, heading: re.Match[str]) -> tuple[str, int]:

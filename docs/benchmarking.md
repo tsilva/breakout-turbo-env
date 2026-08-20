@@ -22,7 +22,7 @@ emulated frames, and observation-buffer throughput.
 
 Always report:
 
-- breakout-turbo-env version and commit;
+- env-BreakoutAtari2600-turbo-native version and commit;
 - processor, core count, memory, operating system, and architecture;
 - Python version and release-build status;
 - environment and thread count;

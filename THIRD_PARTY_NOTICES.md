@@ -1,6 +1,6 @@
 # Third-party notices
 
-breakout-turbo-env is an independent, open-source reimplementation intended for
+env-BreakoutAtari2600-turbo-native is an independent, open-source reimplementation intended for
 reinforcement-learning research. It is not affiliated with, endorsed by, or
 sponsored by Atari or the maintainers of Stable Retro.
 

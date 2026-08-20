@@ -1,4 +1,4 @@
-# breakout-turbo-env Codex Notes
+# env-BreakoutAtari2600-turbo-native Codex Notes
 
 ## Product Specifications
 

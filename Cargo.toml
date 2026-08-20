@@ -5,8 +5,8 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 description = "Deterministic high-throughput Breakout vector environment"
-homepage = "https://github.com/tsilva/breakout-turbo-env"
-repository = "https://github.com/tsilva/breakout-turbo-env"
+homepage = "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
+repository = "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
 readme = "README.md"
 
 [lib]

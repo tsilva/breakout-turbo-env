@@ -1,6 +1,6 @@
 {
-  "name": "breakout-turbo-env",
-  "short_name": "breakout-turbo-env",
+  "name": "env-BreakoutAtari2600-turbo-native",
+  "short_name": "Breakout turbo",
   "icons": [
     {
       "src": "android-chrome-192.png",

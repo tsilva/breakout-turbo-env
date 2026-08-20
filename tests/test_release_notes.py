@@ -73,7 +73,7 @@ def test_finalize_changelog_promotes_unreleased_notes_and_adds_compare_link():
     assert module.extract_release_notes(result, "1.1.0") == (
         "### Added\n\n- New behavior."
     )
-    assert "[1.1.0]: https://github.com/tsilva/breakout-turbo-env/compare/v1.0.0...v1.1.0" in result
+    assert "[1.1.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v1.0.0...v1.1.0" in result
 
 
 def test_finalize_changelog_rejects_empty_unreleased_without_changes():

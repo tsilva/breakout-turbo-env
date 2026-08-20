@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=83,<84", "wheel>=0.45,<1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "breakout-turbo-env"
+version = "0.5.6"
+description = "Migration package for env-breakoutatari2600-turbo-native"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Tiago Silva" }]
+dependencies = ["env-breakoutatari2600-turbo-native==0.5.6"]
+classifiers = [
+  "Development Status :: 7 - Inactive",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+play = ["env-breakoutatari2600-turbo-native[play]==0.5.6"]
+dev = ["env-breakoutatari2600-turbo-native[dev]==0.5.6"]
+
+[project.urls]
+Migration = "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
+
+[tool.setuptools]
+packages = []
+
+[tool.uv]
+exclude-newer = "7 days"
+constraint-dependencies = [
+  "mistralai!=2.4.6",
+  "guardrails-ai!=0.10.1",
+]

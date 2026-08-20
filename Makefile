@@ -47,7 +47,7 @@ test-semantic-oracle:
 	if [ -z "$$output" ]; then output="$$(mktemp -d)/breakout-semantic-oracle"; fi; \
 	$(TURBOBENCH) oracle breakout/start-v2 \
 		--left stable-retro@1.0.1 \
-		--right breakout-turbo-env@checkout:$(CURDIR) \
+		--right env-breakoutatari2600-turbo-native@checkout:$(CURDIR) \
 		--output "$$output" \
 		--allow-dirty; \
 	echo "Semantic-oracle receipt: $$output"
@@ -57,6 +57,6 @@ verify-semantic-oracle:
 		(echo "Set ORACLE_RECEIPT to an external TurboBench receipt" >&2; exit 2)
 	$(TURBOBENCH) verify-oracle "$(ORACLE_RECEIPT)" \
 		--require-canonical \
-		--require-provider breakout-turbo-env
+		--require-provider env-breakoutatari2600-turbo-native
 
 test: test-rust test-python

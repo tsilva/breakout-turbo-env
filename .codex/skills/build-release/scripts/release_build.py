@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic helpers for breakout-turbo-env release builds."""
+"""Deterministic helpers for env-BreakoutAtari2600-turbo-native releases."""
 
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ CARGO_LOCK = REPO_ROOT / "Cargo.lock"
 UV_LOCK = REPO_ROOT / "uv.lock"
 CITATION = REPO_ROOT / "CITATION.cff"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
-PACKAGE_NAME = "breakout-turbo-env"
+PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
+CARGO_PACKAGE_NAME = "breakout-turbo-env"
 IMPORT_NAME = "breakout_turbo_env"
 EXTENSION_NAME = "_breakout_turbo"
 MATURIN_IMAGE = (
@@ -85,7 +86,7 @@ def cargo_version() -> str:
 
 
 def cargo_lock_version() -> str:
-    return section_version(CARGO_LOCK, "package", package_name=PACKAGE_NAME)
+    return section_version(CARGO_LOCK, "package", package_name=CARGO_PACKAGE_NAME)
 
 
 def citation_version() -> str:
@@ -169,7 +170,7 @@ def write_version(version: str) -> None:
     VERSION_PATH.write_text(f"{version}\n", encoding="utf-8")
     replace_section_version(PYPROJECT, "project", version)
     replace_section_version(CARGO_TOML, "package", version)
-    replace_package_version(CARGO_LOCK, PACKAGE_NAME, version)
+    replace_package_version(CARGO_LOCK, CARGO_PACKAGE_NAME, version)
     replace_package_version(UV_LOCK, PACKAGE_NAME, version)
     citation = CITATION.read_text(encoding="utf-8")
     citation = re.sub(r"(?m)^version: .+$", f"version: {version}", citation, count=1)
@@ -300,10 +301,10 @@ def bump_version(args: argparse.Namespace) -> None:
     print(target)
 
 
-def fetch_pypi_project() -> dict[str, object] | None:
+def fetch_pypi_project(package: str = PACKAGE_NAME) -> dict[str, object] | None:
     try:
         with urllib.request.urlopen(
-            f"https://pypi.org/pypi/{PACKAGE_NAME}/json", timeout=20
+            f"https://pypi.org/pypi/{package}/json", timeout=20
         ) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
@@ -312,8 +313,8 @@ def fetch_pypi_project() -> dict[str, object] | None:
         raise
 
 
-def pypi_version_exists(version: str) -> bool:
-    data = fetch_pypi_project()
+def pypi_version_exists(version: str, package: str = PACKAGE_NAME) -> bool:
+    data = fetch_pypi_project(package)
     if data is None:
         return False
     releases = data.get("releases")
@@ -322,15 +323,16 @@ def pypi_version_exists(version: str) -> bool:
 
 def check_pypi(args: argparse.Namespace) -> None:
     validate_version(args.version)
-    exists = pypi_version_exists(args.version)
+    package = args.package or PACKAGE_NAME
+    exists = pypi_version_exists(args.version, package)
     print(
         json.dumps(
-            {"package": PACKAGE_NAME, "version": args.version, "version_exists": exists},
+            {"package": package, "version": args.version, "version_exists": exists},
             indent=2,
         )
     )
     if exists:
-        raise SystemExit(f"{PACKAGE_NAME} {args.version} already exists on PyPI")
+        raise SystemExit(f"{package} {args.version} already exists on PyPI")
 
 
 def resolve_version(args: argparse.Namespace) -> None:
@@ -496,9 +498,11 @@ def audit_wheel(wheel: Path, version: str) -> dict[str, object]:
         if name.startswith(f"{IMPORT_NAME}/{EXTENSION_NAME}")
         and name.endswith((".so", ".pyd"))
     ]
-    expected_macos = f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_arm64.whl"
+    expected_macos = (
+        f"env_breakoutatari2600_turbo_native-{version}-cp311-abi3-macosx_11_0_arm64.whl"
+    )
     expected_linux = (
-        f"breakout_turbo_env-{version}-cp311-abi3-manylinux_2_28_x86_64.whl"
+        f"env_breakoutatari2600_turbo_native-{version}-cp311-abi3-manylinux_2_28_x86_64.whl"
     )
     checks = {
         "version_in_filename": version in wheel.name,
@@ -511,7 +515,7 @@ def audit_wheel(wheel: Path, version: str) -> dict[str, object]:
         "has_license_file": any(name.endswith(".dist-info/licenses/LICENSE") for name in names),
         "declares_mit": "License-Expression: MIT" in metadata,
         "has_repository_url": (
-            "Project-URL: Repository, https://github.com/tsilva/breakout-turbo-env"
+            "Project-URL: Repository, https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
             in metadata
         ),
         "no_bytecode": not any(
@@ -554,11 +558,12 @@ def find_sdist(version: str) -> Path | None:
 
 
 def audit_sdist(archive_path: Path, version: str) -> dict[str, object]:
-    prefix = f"breakout_turbo_env-{version}/"
+    prefix = f"env_breakoutatari2600_turbo_native-{version}/"
     with tarfile.open(archive_path, "r:gz") as archive:
         names = archive.getnames()
     checks = {
-        "expected_filename": archive_path.name == f"breakout_turbo_env-{version}.tar.gz",
+        "expected_filename": archive_path.name
+        == f"env_breakoutatari2600_turbo_native-{version}.tar.gz",
         "has_pyproject": f"{prefix}pyproject.toml" in names,
         "has_cargo_manifest": f"{prefix}Cargo.toml" in names,
         "has_rust_source": f"{prefix}src/lib.rs" in names,
@@ -601,7 +606,7 @@ def release_temp_dir() -> Path:
 def smoke_wheel(args: argparse.Namespace) -> None:
     wheel = args.wheel.resolve()
     with tempfile.TemporaryDirectory(
-        prefix="breakout-turbo-env-wheel-smoke.", dir=release_temp_dir()
+        prefix="env-breakoutatari2600-turbo-native-wheel-smoke.", dir=release_temp_dir()
     ) as temporary:
         target = Path(temporary)
         environment = target / "venv"
@@ -749,6 +754,7 @@ def main() -> None:
 
     pypi = commands.add_parser("check-pypi")
     pypi.add_argument("--version", required=True)
+    pypi.add_argument("--package")
     pypi.set_defaults(func=check_pypi)
 
     latest = commands.add_parser("latest-pypi")

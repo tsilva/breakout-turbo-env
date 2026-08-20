@@ -120,9 +120,9 @@ def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):
     release_build = release_build_module()
     version = release_build.read_version()
     wheel = tmp_path / (
-        f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_arm64.whl"
+        f"env_breakoutatari2600_turbo_native-{version}-cp311-abi3-macosx_11_0_arm64.whl"
     )
-    dist_info = f"breakout_turbo_env-{version}.dist-info"
+    dist_info = f"env_breakoutatari2600_turbo_native-{version}.dist-info"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("breakout_turbo_env/__init__.py", "")
         archive.writestr("breakout_turbo_env/env.py", "")
@@ -133,7 +133,7 @@ def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):
                 (
                     "Metadata-Version: 2.4",
                     "License-Expression: MIT",
-                    "Project-URL: Repository, https://github.com/tsilva/breakout-turbo-env",
+                    "Project-URL: Repository, https://github.com/tsilva/env-BreakoutAtari2600-turbo-native",
                 )
             ),
         )
@@ -143,7 +143,7 @@ def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):
     assert all(result["checks"].values())
 
     unsupported = tmp_path / (
-        f"breakout_turbo_env-{version}-cp311-abi3-macosx_11_0_x86_64.whl"
+        f"env_breakoutatari2600_turbo_native-{version}-cp311-abi3-macosx_11_0_x86_64.whl"
     )
     wheel.rename(unsupported)
     result = release_build.audit_wheel(unsupported, version)
@@ -166,8 +166,10 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
     assert "attest-sbom" in build
     assert "gh release create" in publish
     assert "gh-action-pypi-publish" in publish
-    assert "cp candidate/dist/* publish-dist/" in publish
-    assert "packages-dir: publish-dist" in publish
+    assert "cp candidate/dist/env_breakoutatari2600_turbo_native-*" in publish
+    assert "cp candidate/dist/breakout_turbo_env-*" in publish
+    assert "packages-dir: publish-primary" in publish
+    assert "packages-dir: publish-redirect" in publish
     assert "packages-dir: candidate/dist" not in publish
     assert "contents: write" in publish
     assert "create-github-app-token" not in publish
@@ -190,7 +192,7 @@ def test_release_notes_are_validated_before_pypi_publication():
     assert build.index("release_notes.py") < build.index("check-pypi")
     assert "release_state.py verify" in publish
     assert publish.index("release_state.py verify") < publish.index(
-        "Publish exact candidate to PyPI"
+        "Publish exact primary candidate to PyPI"
     )
     assert release_script.index("finalize_release_notes(version)") < release_script.index(
         'helper("bump-version", "--to", version, "--write")'

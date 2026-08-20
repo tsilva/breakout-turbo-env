@@ -46,7 +46,7 @@ def test_dependency_snapshot_ignores_only_first_party_version():
     release = release_module()
 
     before = release.dependency_graph_snapshot()
-    assert "breakout-turbo-env" in before
+    assert "env-breakoutatari2600-turbo-native" in before
     assert '"uv_options"' in before
 
 

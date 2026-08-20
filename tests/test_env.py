@@ -32,7 +32,7 @@ def make_env(**kwargs):
 
 def test_public_package_exposes_distribution_version():
     assert breakout_turbo_env.__version__ == importlib.metadata.version(
-        "breakout-turbo-env"
+        "env-breakoutatari2600-turbo-native"
     )
 
 

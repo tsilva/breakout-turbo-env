@@ -1,6 +1,6 @@
 # Code of conduct
 
-We want participation in breakout-turbo-env to be safe, constructive, and
+We want participation in env-BreakoutAtari2600-turbo-native to be safe, constructive, and
 welcoming. Be respectful, assume good intent, give actionable technical
 feedback, and make room for people with different experience levels and
 backgrounds.

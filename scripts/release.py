@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a reviewable breakout-turbo-env release change in the local worktree."""
+"""Prepare a reviewable env-BreakoutAtari2600-turbo-native release change."""
 
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ RELEASE_HELPER = (
 RELEASE_NOTES = REPO_ROOT / "scripts" / "release_notes.py"
 LOCK_SCRIPT = REPO_ROOT / "scripts" / "lock.py"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
-PACKAGE_NAME = "breakout-turbo-env"
+PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
+CARGO_PACKAGE_NAME = "breakout-turbo-env"
+MIGRATION_VERSION = "0.5.6"
+REDIRECT_PACKAGE = "breakout-turbo-env"
 ALLOWED_RELEASE_FILES = {
     "Cargo.lock",
     "Cargo.toml",
@@ -94,6 +97,14 @@ def target_version(args: argparse.Namespace) -> str:
     else:
         version = helper_capture("resolve-version", "--part", "patch").splitlines()[-1]
     helper("check-pypi", "--version", version)
+    if version == MIGRATION_VERSION:
+        helper(
+            "check-pypi",
+            "--version",
+            version,
+            "--package",
+            REDIRECT_PACKAGE,
+        )
     return version
 
 
@@ -137,7 +148,7 @@ def dependency_graph_snapshot() -> str:
         if package.get("name") == PACKAGE_NAME:
             package.pop("version", None)
     for package in normalized["cargo_packages"]:  # type: ignore[union-attr]
-        if package.get("name") == PACKAGE_NAME:
+        if package.get("name") == CARGO_PACKAGE_NAME:
             package.pop("version", None)
     return json.dumps(normalized, sort_keys=True, separators=(",", ":"))
 

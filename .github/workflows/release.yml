@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/p/breakout-turbo-env
+      url: https://pypi.org/p/env-breakoutatari2600-turbo-native
     permissions:
       actions: read
       attestations: read
@@ -120,14 +120,21 @@ jobs:
       - name: Stage candidate distributions for publishing
         if: steps.pypi.outputs.publish_needed == 'true'
         run: |
-          mkdir publish-dist
-          cp candidate/dist/* publish-dist/
+          mkdir publish-primary publish-redirect
+          cp candidate/dist/env_breakoutatari2600_turbo_native-* publish-primary/
+          cp candidate/dist/breakout_turbo_env-* publish-redirect/
 
-      - name: Publish exact candidate to PyPI
-        if: steps.pypi.outputs.publish_needed == 'true'
+      - name: Publish exact primary candidate to PyPI
+        if: steps.pypi.outputs.primary_publish_needed == 'true'
         uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
         with:
-          packages-dir: publish-dist
+          packages-dir: publish-primary
+
+      - name: Publish exact migration candidate to PyPI
+        if: steps.pypi.outputs.redirect_publish_needed == 'true'
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+        with:
+          packages-dir: publish-redirect
 
       - name: Verify exact PyPI file set
         shell: bash
@@ -215,7 +222,7 @@ jobs:
               verified-release/candidate/release-manifest.json \
               verified-release/candidate/sbom.spdx.json \
               --repo "$GITHUB_REPOSITORY" \
-              --title "breakout-turbo-env $tag" \
+              --title "env-BreakoutAtari2600-turbo-native $tag" \
               --notes-file verified-release/release-notes.md \
               --verify-tag
           fi

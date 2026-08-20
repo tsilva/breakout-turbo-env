@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/tsilva/breakout-turbo-env/main/logo.png" alt="breakout-turbo-env logo" width="220" />
+  <img src="https://raw.githubusercontent.com/tsilva/env-BreakoutAtari2600-turbo-native/main/logo.png" alt="env-BreakoutAtari2600-turbo-native logo" width="220" />
 
   **🕹️ Blazing-fast, deterministic Breakout for Reinforcement Learning 🕹️**
 </div>
 
-breakout-turbo-env is a Python library for reinforcement-learning researchers
+env-BreakoutAtari2600-turbo-native is a Python library for reinforcement-learning researchers
 and engineers who need many reproducible Breakout games behind one Gymnasium
 vector-environment API. Add it to a uv project from PyPI, create
 `BreakoutVecEnv`, and step every lane with one NumPy action batch.
@@ -14,7 +14,7 @@ manual reset, policy-ready observations, native rendering, exact snapshots, and
 side-effect-free action branching.
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/tsilva/breakout-turbo-env/main/demo.gif" alt="Native Breakout gameplay rendered by breakout-turbo-env" width="320" />
+  <img src="https://raw.githubusercontent.com/tsilva/env-BreakoutAtari2600-turbo-native/main/demo.gif" alt="Native Breakout gameplay rendered by env-BreakoutAtari2600-turbo-native" width="320" />
 </div>
 
 ## Install
@@ -25,20 +25,20 @@ Requires Python 3.11+ on Apple-silicon macOS 11+ or x86-64 Linux with glibc
 Install [uv](https://docs.astral.sh/uv/), then add the library to your project:
 
 ```bash
-uv add breakout-turbo-env
+uv add env-breakoutatari2600-turbo-native
 ```
 
 Choose the corresponding requirement instead when you need an optional tool:
 
 ```bash
-uv add "breakout-turbo-env[play]"  # interactive Pygame player
+uv add "env-breakoutatari2600-turbo-native[play]"  # interactive Pygame player
 ```
 
 To work from source, also install a Rust toolchain, then run:
 
 ```bash
-git clone https://github.com/tsilva/breakout-turbo-env.git
-cd breakout-turbo-env
+git clone https://github.com/tsilva/env-BreakoutAtari2600-turbo-native.git
+cd env-BreakoutAtari2600-turbo-native
 uv sync --frozen --extra dev --extra play
 make develop-release
 ```
@@ -200,7 +200,7 @@ Append `--help` to the player or benchmark command for its options.
 
 ## Architecture
 
-![breakout-turbo-env architecture](https://raw.githubusercontent.com/tsilva/breakout-turbo-env/main/architecture.png)
+![env-BreakoutAtari2600-turbo-native architecture](https://raw.githubusercontent.com/tsilva/env-BreakoutAtari2600-turbo-native/main/architecture.png)
 
 ## License
 

@@ -41,7 +41,7 @@ def test_package_metadata_exposes_public_project_identity():
     assert metadata["license-files"] == ["LICENSE"]
     assert metadata["authors"]
     assert metadata["urls"]["Repository"] == (
-        "https://github.com/tsilva/breakout-turbo-env"
+        "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
     )
     assert metadata["urls"]["Documentation"].endswith("#readme")
     assert "Programming Language :: Python :: 3.14" in metadata["classifiers"]
@@ -56,7 +56,7 @@ def test_readme_uses_pypi_safe_images_and_local_links_resolve():
 
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert 'src="./' not in readme
-    assert "raw.githubusercontent.com/tsilva/breakout-turbo-env" in readme
+    assert "raw.githubusercontent.com/tsilva/env-BreakoutAtari2600-turbo-native" in readme
 
     for markdown_path in markdown_paths:
         text = markdown_path.read_text(encoding="utf-8")

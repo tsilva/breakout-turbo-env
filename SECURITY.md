@@ -10,7 +10,7 @@ The supported binary platforms are Apple-silicon macOS and x86-64 Linux.
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability. Use
-[GitHub private vulnerability reporting](https://github.com/tsilva/breakout-turbo-env/security/advisories/new)
+[GitHub private vulnerability reporting](https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/security/advisories/new)
 and include:
 
 - the affected version and platform;
@@ -20,6 +20,6 @@ and include:
 
 The maintainer will acknowledge a report as soon as practical, keep the
 reporter informed while it is evaluated, and coordinate publication after a fix
-is available. This policy is for security defects in breakout-turbo-env; use
+is available. This policy is for security defects in env-BreakoutAtari2600-turbo-native; use
 GitHub's abuse reporting process for conduct concerns that cannot safely be
 reported through the repository.

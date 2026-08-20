@@ -197,7 +197,7 @@ payload size. The caller owns snapshot selection, eviction, persistence
 metadata, and curriculum policy.
 
 Serialized `get_state()` snapshots are guaranteed only for exact continuation
-with the same breakout-turbo-env version and compatible environment
+with the same env-BreakoutAtari2600-turbo-native version and compatible environment
 configuration. Their byte format is not a cross-version storage format.
 Persist the package version and configuration beside any saved snapshot.
 

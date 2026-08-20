@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Differential probe for Stable Retro Breakout and breakout-turbo-env.
+"""Differential probe for Stable Retro Breakout and env-BreakoutAtari2600-turbo-native.
 
 This reusable developer/test harness deliberately does not make the ROM or
 Stable Retro a package dependency. It discovers the reference ball-x RAM

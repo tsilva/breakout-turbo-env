@@ -1,15 +1,15 @@
 cff-version: 1.2.0
-message: "If you use breakout-turbo-env in research, please cite this software."
-title: "breakout-turbo-env"
+message: "If you use env-BreakoutAtari2600-turbo-native in research, please cite this software."
+title: "env-BreakoutAtari2600-turbo-native"
 type: software
 authors:
   - family-names: Silva
     given-names: Tiago
-repository-code: "https://github.com/tsilva/breakout-turbo-env"
-url: "https://pypi.org/project/breakout-turbo-env/"
+repository-code: "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
+url: "https://pypi.org/project/env-breakoutatari2600-turbo-native/"
 license: MIT
 version: 0.5.6
-date-released: 2026-08-14
+date-released: 2026-08-20
 abstract: >-
   A deterministic, fixed-point, high-throughput Breakout vector environment
   with Gymnasium-compatible lifecycle, rendering, snapshots, and branching.

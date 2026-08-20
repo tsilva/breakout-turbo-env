@@ -11,8 +11,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PACKAGE = "breakout-turbo-env"
-REPOSITORY = "tsilva/breakout-turbo-env"
+PACKAGE = "env-breakoutatari2600-turbo-native"
+REDIRECT_PACKAGE = "breakout-turbo-env"
+REPOSITORY = "tsilva/env-BreakoutAtari2600-turbo-native"
 SCHEMA = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -52,8 +53,10 @@ def validate_identity(version: str, commit: str, repository: str) -> None:
 def expected_distribution_names(version: str) -> set[str]:
     normalized = version.replace("-", "_")
     return {
-        f"breakout_turbo_env-{normalized}-cp311-abi3-macosx_11_0_arm64.whl",
-        f"breakout_turbo_env-{normalized}-cp311-abi3-manylinux_2_28_x86_64.whl",
+        f"env_breakoutatari2600_turbo_native-{normalized}-cp311-abi3-macosx_11_0_arm64.whl",
+        f"env_breakoutatari2600_turbo_native-{normalized}-cp311-abi3-manylinux_2_28_x86_64.whl",
+        f"env_breakoutatari2600_turbo_native-{normalized}.tar.gz",
+        f"breakout_turbo_env-{normalized}-py3-none-any.whl",
         f"breakout_turbo_env-{normalized}.tar.gz",
     }
 
@@ -204,10 +207,10 @@ def verify_command(args: argparse.Namespace) -> None:
     print(json.dumps(manifest, indent=2, sort_keys=True))
 
 
-def pypi_files(version: str) -> dict[str, str]:
+def pypi_files(package: str, version: str) -> dict[str, str]:
     try:
         with urllib.request.urlopen(
-            f"https://pypi.org/pypi/{PACKAGE}/{version}/json", timeout=30
+            f"https://pypi.org/pypi/{package}/{version}/json", timeout=30
         ) as response:
             data = json.load(response)
     except urllib.error.HTTPError as error:
@@ -229,24 +232,61 @@ def pypi_status(args: argparse.Namespace) -> None:
         repository=args.repository,
         run_id=args.run_id,
     )
-    expected = {
+    expected_all = {
         Path(entry["path"]).name: entry["sha256"]
         for entry in manifest["artifacts"]
         if entry["path"].startswith("dist/")
     }
-    actual = pypi_files(args.version)
-    if actual and actual != expected:
-        raise SystemExit(
-            "PyPI already contains a different or incomplete file set for this version"
-        )
-    complete = actual == expected
+    expected = {
+        PACKAGE: {
+            name: digest
+            for name, digest in expected_all.items()
+            if name.startswith("env_breakoutatari2600_turbo_native-")
+        },
+        REDIRECT_PACKAGE: {
+            name: digest
+            for name, digest in expected_all.items()
+            if name.startswith("breakout_turbo_env-")
+        },
+    }
+    actual = {
+        package: pypi_files(package, args.version)
+        for package in (PACKAGE, REDIRECT_PACKAGE)
+    }
+    for package in (PACKAGE, REDIRECT_PACKAGE):
+        if actual[package] and actual[package] != expected[package]:
+            raise SystemExit(
+                f"PyPI project {package} contains a different or incomplete "
+                "file set for this version"
+            )
+    complete_by_package = {
+        package: actual[package] == expected[package]
+        for package in (PACKAGE, REDIRECT_PACKAGE)
+    }
+    complete = all(complete_by_package.values())
     if args.require_complete and not complete:
         raise SystemExit("the exact candidate is not yet complete on PyPI")
     status = "complete" if complete else "absent"
-    result = {"status": status, "publish_needed": not complete, "files": actual}
+    result = {
+        "status": status,
+        "publish_needed": not complete,
+        "publish_needed_by_package": {
+            package: not is_complete
+            for package, is_complete in complete_by_package.items()
+        },
+        "files": actual,
+    }
     if args.github_output is not None:
         with args.github_output.open("a", encoding="utf-8") as output:
             output.write(f"publish_needed={'true' if not complete else 'false'}\n")
+            output.write(
+                "primary_publish_needed="
+                f"{'false' if complete_by_package[PACKAGE] else 'true'}\n"
+            )
+            output.write(
+                "redirect_publish_needed="
+                f"{'false' if complete_by_package[REDIRECT_PACKAGE] else 'true'}\n"
+            )
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping make breakout-turbo-env more useful and trustworthy for the
+Thanks for helping make env-BreakoutAtari2600-turbo-native more useful and trustworthy for the
 reinforcement-learning community.
 
 ## Before opening a change
@@ -16,8 +16,8 @@ reinforcement-learning community.
 Install [uv](https://docs.astral.sh/uv/) and a Rust toolchain, then run:
 
 ```bash
-git clone https://github.com/tsilva/breakout-turbo-env.git
-cd breakout-turbo-env
+git clone https://github.com/tsilva/env-BreakoutAtari2600-turbo-native.git
+cd env-BreakoutAtari2600-turbo-native
 uv sync --locked --extra dev --extra play
 make develop-release
 ```
@@ -47,7 +47,7 @@ frames, processed observations, rewards, termination and truncation, selected
 info, lane resets, and snapshot continuation. The sibling-fork suite remains a
 useful secondary regression check. Both require a locally configured lawful
 Breakout ROM. Checkout receipts are development evidence. After publishing the
-candidate, regenerate the oracle with `breakout-turbo-env@VERSION` and verify
+candidate, regenerate the oracle with `env-breakoutatari2600-turbo-native@VERSION` and verify
 that PyPI-candidate receipt outside the repository:
 
 ```bash

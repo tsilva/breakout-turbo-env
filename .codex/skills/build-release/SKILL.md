@@ -1,6 +1,6 @@
 ---
 name: build-release
-description: Prepare, build, approve, publish, and verify a breakout-turbo-env release through its gated candidate state machine.
+description: Prepare, build, approve, publish, and verify an env-breakoutatari2600-turbo-native release through its gated candidate state machine.
 ---
 
 # Build Release
@@ -73,13 +73,13 @@ the candidate. A partial or conflicting version is a hard stop.
 Confirm the exact wheel and source filenames at:
 
 ```text
-https://pypi.org/project/breakout-turbo-env/<version>/
+https://pypi.org/project/env-breakoutatari2600-turbo-native/<version>/
 ```
 
 Then verify each downloaded distribution with:
 
 ```bash
-gh attestation verify <distribution> --repo tsilva/breakout-turbo-env
+gh attestation verify <distribution> --repo tsilva/env-BreakoutAtari2600-turbo-native
 ```
 
 Confirm the `v<version>` tag resolves to the candidate SHA and the GitHub

@@ -28,7 +28,7 @@ _COMPATIBILITY_ENV_SPECS = {
 }
 
 try:
-    __version__ = version("breakout-turbo-env")
+    __version__ = version("env-breakoutatari2600-turbo-native")
 except PackageNotFoundError:  # Source tree imported without an installed distribution.
     __version__ = "0+unknown"
 

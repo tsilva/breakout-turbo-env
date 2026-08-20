@@ -52,7 +52,7 @@ def test_candidate_round_trip_binds_artifacts_and_commit(tmp_path):
         run_id="20",
     )
     assert manifest["state"] == "built"
-    assert len(manifest["artifacts"]) == 4
+    assert len(manifest["artifacts"]) == 6
 
 
 def test_candidate_verification_rejects_artifact_mutation(tmp_path):

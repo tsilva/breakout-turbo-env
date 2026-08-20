@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare equivalent breakout-turbo-env and Stable Retro vector workloads."""
+"""Compare equivalent native Breakout and Stable Retro vector workloads."""
 
 from __future__ import annotations
 
@@ -202,11 +202,11 @@ def main(argv=None) -> None:
         return
     print(json.dumps(result["config"], sort_keys=True))
     print(
-        "breakout-turbo-env "
+        "env-BreakoutAtari2600-turbo-native "
         f"median={turbo['median_env_steps_per_sec']:.1f} env-steps/s"
     )
     print(
-        "stable-retro-turbo "
+        "env-StableRetro-turbo "
         f"median={stable['median_env_steps_per_sec']:.1f} env-steps/s"
     )
     print(f"median_speedup={result['median_speedup']:.2f}x")

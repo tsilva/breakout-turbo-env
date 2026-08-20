@@ -1,6 +1,6 @@
 ## Outcome
 
-Describe the user-visible result and why it belongs in breakout-turbo-env.
+Describe the user-visible result and why it belongs in env-BreakoutAtari2600-turbo-native.
 
 ## Validation
 

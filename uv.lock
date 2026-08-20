@@ -26,39 +26,6 @@ wheels = [
 ]
 
 [[package]]
-name = "breakout-turbo-env"
-version = "0.5.6"
-source = { editable = "." }
-dependencies = [
-    { name = "gymnasium" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "maturin" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "twine" },
-]
-play = [
-    { name = "pygame" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gymnasium", specifier = ">=1.1,<2" },
-    { name = "maturin", marker = "extra == 'dev'", specifier = ">=1.8,<2" },
-    { name = "numpy", specifier = ">=1.26,<3" },
-    { name = "pygame", marker = "extra == 'play'", specifier = ">=2.6,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3,<10" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
-    { name = "twine", marker = "extra == 'dev'", specifier = ">=6.2,<7" },
-]
-provides-extras = ["play", "dev"]
-
-[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -258,6 +225,39 @@ sdist = { url = "https://files.pythonhosted.org/packages/39/a4/5180d9afc57e8fca0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl", hash = "sha256:25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea", size = 634701, upload-time = "2026-05-27T17:40:58.442Z" },
 ]
+
+[[package]]
+name = "env-breakoutatari2600-turbo-native"
+version = "0.5.6"
+source = { editable = "." }
+dependencies = [
+    { name = "gymnasium" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "maturin" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "twine" },
+]
+play = [
+    { name = "pygame" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gymnasium", specifier = ">=1.1,<2" },
+    { name = "maturin", marker = "extra == 'dev'", specifier = ">=1.8,<2" },
+    { name = "numpy", specifier = ">=1.26,<3" },
+    { name = "pygame", marker = "extra == 'play'", specifier = ">=2.6,<3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3,<10" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
+    { name = "twine", marker = "extra == 'dev'", specifier = ">=6.2,<7" },
+]
+provides-extras = ["play", "dev"]
 
 [[package]]
 name = "farama-notifications"
