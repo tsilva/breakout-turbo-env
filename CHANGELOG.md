@@ -6,6 +6,8 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+## [0.5.7] - 2026-08-20
+
 ### Changed
 
 - Renamed the project and distribution to `env-BreakoutAtari2600-turbo-native`
@@ -214,6 +216,7 @@ releases; changes will be recorded here.
 
 - Initial public release.
 
+[0.5.7]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.3...v0.5.4
