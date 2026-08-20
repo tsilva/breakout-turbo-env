@@ -21,7 +21,7 @@ LOCK_SCRIPT = REPO_ROOT / "scripts" / "lock.py"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
 CARGO_PACKAGE_NAME = "breakout-turbo-env"
-MIGRATION_VERSION = "0.5.6"
+MIGRATION_VERSION = "0.5.7"
 REDIRECT_PACKAGE = "breakout-turbo-env"
 ALLOWED_RELEASE_FILES = {
     "Cargo.lock",

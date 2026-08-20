@@ -6,6 +6,14 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Changed
+
+- Renamed the project and distribution to `env-BreakoutAtari2600-turbo-native`
+  and `env-breakoutatari2600-turbo-native` while preserving the
+  `breakout_turbo_env` import package, existing CLI, Gymnasium environment ID,
+  native extension, and snapshot codec ID; publish `breakout-turbo-env` as a
+  metadata-only migration package.
+
 ## [0.5.6] - 2026-08-14
 
 ### Fixed
