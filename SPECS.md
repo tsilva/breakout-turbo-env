@@ -4,7 +4,7 @@
 
 ## PROJECT REQUIREMENTS
 
-- Publish the Python distribution as `env-breakoutatari2600-turbo-native` while preserving the public `breakout_turbo_env` import package.
+- Use `env-BreakoutAtari2600-turbo-native` as the project and GitHub repository name, `env-breakoutatari2600-turbo-native` as the Python distribution name, and `env_breakoutatari2600_turbo_native` as the public Python import package; current project-owned identities must not use any former project, distribution, import, or command identifier.
 - Given the same environment configuration, starting state, and action sequence, the environment must produce identical transition outputs.
 - The vector environment must step every game from one batched action input and return observations and transition results that conform to its declared Gymnasium spaces.
 - The environment must never automatically reset a terminal game; callers must be able to reset selected games without changing unselected games.

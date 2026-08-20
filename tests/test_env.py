@@ -9,11 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import breakout_turbo_env
+import env_breakoutatari2600_turbo_native
 import gymnasium as gym
 import numpy as np
 import pytest
-from breakout_turbo_env import (
+from env_breakoutatari2600_turbo_native import (
     FIXED_POINT_ONE,
     RAW_HEIGHT,
     RENDER_HEIGHT,
@@ -31,37 +31,37 @@ def make_env(**kwargs):
 
 
 def test_public_package_exposes_distribution_version():
-    assert breakout_turbo_env.__version__ == importlib.metadata.version(
+    assert env_breakoutatari2600_turbo_native.__version__ == importlib.metadata.version(
         "env-breakoutatari2600-turbo-native"
     )
 
 
 def test_generic_gymnasium_registration_is_vector_only_and_idempotent(monkeypatch):
-    spec = gym.spec(breakout_turbo_env.GYMNASIUM_ENV_ID)
+    spec = gym.spec(env_breakoutatari2600_turbo_native.GYMNASIUM_ENV_ID)
     assert spec.entry_point is None
-    assert spec.vector_entry_point == ("breakout_turbo_env:_make_gymnasium_vec_env")
+    assert spec.vector_entry_point == ("env_breakoutatari2600_turbo_native:_make_gymnasium_vec_env")
     assert spec.kwargs == {}
-    breakout_turbo_env._register_gymnasium_envs()
+    env_breakoutatari2600_turbo_native._register_gymnasium_envs()
 
     with pytest.raises(gym.error.Error, match="entry_point is not specified"):
         gym.make(
-            breakout_turbo_env.GYMNASIUM_ENV_ID,
+            env_breakoutatari2600_turbo_native.GYMNASIUM_ENV_ID,
             game="Breakout-Atari2600-v0",
         )
     with pytest.raises(TypeError, match="game"):
-        gym.make_vec(breakout_turbo_env.GYMNASIUM_ENV_ID, num_envs=1)
+        gym.make_vec(env_breakoutatari2600_turbo_native.GYMNASIUM_ENV_ID, num_envs=1)
 
     monkeypatch.setitem(
         gym.registry,
-        breakout_turbo_env.GYMNASIUM_ENV_ID,
+        env_breakoutatari2600_turbo_native.GYMNASIUM_ENV_ID,
         EnvSpec(
-            id=breakout_turbo_env.GYMNASIUM_ENV_ID,
+            id=env_breakoutatari2600_turbo_native.GYMNASIUM_ENV_ID,
             entry_point=None,
             vector_entry_point="tests:conflicting_factory",
         ),
     )
     with pytest.raises(gym.error.Error, match="conflicting specification"):
-        breakout_turbo_env._register_gymnasium_envs()
+        env_breakoutatari2600_turbo_native._register_gymnasium_envs()
 
 
 def test_module_qualified_gymnasium_id_registers_in_a_clean_process():
@@ -75,18 +75,18 @@ def test_module_qualified_gymnasium_id_registers_in_a_clean_process():
             sys.executable,
             "-c",
             'exec("""import gymnasium as gym\n'
-            "assert 'Breakout-Turbo-v0' not in gym.registry\n"
+            "assert 'EnvBreakoutAtari2600TurboNative-v0' not in gym.registry\n"
             "try:\n"
             "    gym.make_vec(\n"
-            "        'breakout_turbo_env:Breakout-Turbo-v0', num_envs=1\n"
+            "        'env_breakoutatari2600_turbo_native:EnvBreakoutAtari2600TurboNative-v0', num_envs=1\n"
             "    )\n"
             "except TypeError as exc:\n"
             "    assert 'game' in str(exc)\n"
             "else:\n"
             "    raise AssertionError('game was not required')\n"
-            "spec = gym.spec('Breakout-Turbo-v0')\n"
+            "spec = gym.spec('EnvBreakoutAtari2600TurboNative-v0')\n"
             "assert spec.vector_entry_point == "
-            '\'breakout_turbo_env:_make_gymnasium_vec_env\'\n""")',
+            '\'env_breakoutatari2600_turbo_native:_make_gymnasium_vec_env\'\n""")',
         ],
         check=True,
         cwd=root,
@@ -96,7 +96,7 @@ def test_module_qualified_gymnasium_id_registers_in_a_clean_process():
 
 def test_generic_gymnasium_factory_runs_native_vector_env():
     env = gym.make_vec(
-        "breakout_turbo_env:Breakout-Turbo-v0",
+        "env_breakoutatari2600_turbo_native:EnvBreakoutAtari2600TurboNative-v0",
         game="Breakout-Atari2600-v0",
         num_envs=2,
         num_threads=1,

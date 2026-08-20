@@ -92,8 +92,8 @@ def test_core_package_keeps_play_dependencies_optional():
         dependency.startswith("cibuildwheel")
         for dependency in project["optional-dependencies"]["dev"]
     )
-    assert "python/breakout_turbo_env/py.typed" in metadata["tool"]["maturin"]["include"]
-    assert (REPO_ROOT / "python" / "breakout_turbo_env" / "py.typed").is_file()
+    assert "python/env_breakoutatari2600_turbo_native/py.typed" in metadata["tool"]["maturin"]["include"]
+    assert (REPO_ROOT / "python" / "env_breakoutatari2600_turbo_native" / "py.typed").is_file()
 
 
 def test_lock_policy_is_repository_owned_and_has_no_exemptions():
@@ -124,9 +124,9 @@ def test_wheel_audit_accepts_only_supported_platform_metadata(tmp_path):
     )
     dist_info = f"env_breakoutatari2600_turbo_native-{version}.dist-info"
     with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr("breakout_turbo_env/__init__.py", "")
-        archive.writestr("breakout_turbo_env/env.py", "")
-        archive.writestr("breakout_turbo_env/_breakout_turbo.abi3.so", "")
+        archive.writestr("env_breakoutatari2600_turbo_native/__init__.py", "")
+        archive.writestr("env_breakoutatari2600_turbo_native/env.py", "")
+        archive.writestr("env_breakoutatari2600_turbo_native/_env_breakoutatari2600_turbo_native.abi3.so", "")
         archive.writestr(
             f"{dist_info}/METADATA",
             "\n".join(
@@ -167,9 +167,7 @@ def test_release_workflow_publishes_sdist_checksums_and_github_release():
     assert "gh release create" in publish
     assert "gh-action-pypi-publish" in publish
     assert "cp candidate/dist/env_breakoutatari2600_turbo_native-*" in publish
-    assert "cp candidate/dist/breakout_turbo_env-*" in publish
     assert "packages-dir: publish-primary" in publish
-    assert "packages-dir: publish-redirect" in publish
     assert "packages-dir: candidate/dist" not in publish
     assert "contents: write" in publish
     assert "create-github-app-token" not in publish
@@ -249,7 +247,7 @@ def test_resolved_path_containment_canonicalizes_symlinks(tmp_path):
 
 def test_resolved_path_containment_rejects_checkout_import(tmp_path):
     environment = tmp_path / "venv"
-    checkout_module = tmp_path / "checkout" / "breakout_turbo_env" / "__init__.py"
+    checkout_module = tmp_path / "checkout" / "env_breakoutatari2600_turbo_native" / "__init__.py"
     environment.mkdir()
     checkout_module.parent.mkdir(parents=True)
     checkout_module.touch()

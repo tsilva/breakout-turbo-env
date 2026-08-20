@@ -318,7 +318,7 @@ class StableReference:
 def compare_corner(
     reference: StableReference, corner: str, frames: int
 ) -> list[Transition]:
-    from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
+    from env_breakoutatari2600_turbo_native import FIXED_POINT_ONE, BreakoutVecEnv
 
     if corner == "top-left":
         dx_sign, start = -1, Point(10, 34)
@@ -406,7 +406,7 @@ def compare_episode(
     seed: int | None = None,
 ) -> EpisodeResult:
     """Run one live cartridge/Turbo episode with identical generated actions."""
-    from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
+    from env_breakoutatari2600_turbo_native import FIXED_POINT_ONE, BreakoutVecEnv
 
     reference.reopen()
     stable_frame, stable_info = reference.env.reset()
@@ -584,7 +584,7 @@ def compare_episode(
 
 def parse_args() -> argparse.Namespace:
     repo = Path(__file__).resolve().parents[1]
-    default_stable = repo.parent / "stable-retro-turbo"
+    default_stable = repo.parent / "env-StableRetro-turbo"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stable-repo", type=Path, default=default_stable)
     parser.add_argument("--mode", choices=("corners", "episodes", "all"), default="all")

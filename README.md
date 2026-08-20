@@ -50,7 +50,7 @@ import gymnasium as gym
 import numpy as np
 
 env = gym.make_vec(
-    "breakout_turbo_env:Breakout-Turbo-v0",
+    "env_breakoutatari2600_turbo_native:EnvBreakoutAtari2600TurboNative-v0",
     game="Breakout-Atari2600-v0",
     num_envs=4096,
     num_threads=8,
@@ -88,7 +88,7 @@ For PPO with learning-rate decay and KL-based update stopping:
 uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo-stable-updates
 ```
 
-Breakout Turbo is ROM-free, so neither command needs a ROM path or registration.
+env-BreakoutAtari2600-turbo-native is ROM-free, so neither command needs a ROM path or registration.
 GradLab shows live progress, writes a playable `final_model.zip` below `./runs`,
 and prints the matching version-pinned `uvx ... play` command when training
 finishes or is stopped safely. Local runs disable W&B and checkpoint evaluation
@@ -149,9 +149,9 @@ remains a separate install and is not part of the core dependency set.
 ## Commands
 
 ```bash
-uv run --frozen --extra play breakout-turbo-env play       # open the player
-uv run --frozen --extra play breakout-turbo-env play --uncapped
-uv run --frozen breakout-turbo-env benchmark               # benchmark the policy path
+uv run --frozen --extra play env-breakoutatari2600-turbo-native play       # open the player
+uv run --frozen --extra play env-breakoutatari2600-turbo-native play --uncapped
+uv run --frozen env-breakoutatari2600-turbo-native benchmark               # benchmark the policy path
 uv run --frozen python scripts/compare_stable_retro.py     # run live differential checks
 uv run --frozen ruff check .                               # lint Python
 uv run --frozen pytest -m "not stable_retro"               # run regular Python tests

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from breakout_turbo_env.play import (
+from env_breakoutatari2600_turbo_native.play import (
     _hud_text,
     _limit_frame_rate,
     _print_episode_stats,

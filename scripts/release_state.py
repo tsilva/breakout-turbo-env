@@ -12,7 +12,6 @@ import urllib.request
 from pathlib import Path
 
 PACKAGE = "env-breakoutatari2600-turbo-native"
-REDIRECT_PACKAGE = "breakout-turbo-env"
 REPOSITORY = "tsilva/env-BreakoutAtari2600-turbo-native"
 SCHEMA = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -56,8 +55,6 @@ def expected_distribution_names(version: str) -> set[str]:
         f"env_breakoutatari2600_turbo_native-{normalized}-cp311-abi3-macosx_11_0_arm64.whl",
         f"env_breakoutatari2600_turbo_native-{normalized}-cp311-abi3-manylinux_2_28_x86_64.whl",
         f"env_breakoutatari2600_turbo_native-{normalized}.tar.gz",
-        f"breakout_turbo_env-{normalized}-py3-none-any.whl",
-        f"breakout_turbo_env-{normalized}.tar.gz",
     }
 
 
@@ -238,54 +235,32 @@ def pypi_status(args: argparse.Namespace) -> None:
         if entry["path"].startswith("dist/")
     }
     expected = {
-        PACKAGE: {
-            name: digest
-            for name, digest in expected_all.items()
-            if name.startswith("env_breakoutatari2600_turbo_native-")
-        },
-        REDIRECT_PACKAGE: {
-            name: digest
-            for name, digest in expected_all.items()
-            if name.startswith("breakout_turbo_env-")
-        },
+        name: digest
+        for name, digest in expected_all.items()
+        if name.startswith("env_breakoutatari2600_turbo_native-")
     }
-    actual = {
-        package: pypi_files(package, args.version)
-        for package in (PACKAGE, REDIRECT_PACKAGE)
-    }
-    for package in (PACKAGE, REDIRECT_PACKAGE):
-        if actual[package] and actual[package] != expected[package]:
-            raise SystemExit(
-                f"PyPI project {package} contains a different or incomplete "
-                "file set for this version"
-            )
-    complete_by_package = {
-        package: actual[package] == expected[package]
-        for package in (PACKAGE, REDIRECT_PACKAGE)
-    }
-    complete = all(complete_by_package.values())
+    actual = pypi_files(PACKAGE, args.version)
+    if actual and actual != expected:
+        raise SystemExit(
+            f"PyPI project {PACKAGE} contains a different or incomplete "
+            "file set for this version"
+        )
+    complete = actual == expected
     if args.require_complete and not complete:
         raise SystemExit("the exact candidate is not yet complete on PyPI")
     status = "complete" if complete else "absent"
     result = {
         "status": status,
         "publish_needed": not complete,
-        "publish_needed_by_package": {
-            package: not is_complete
-            for package, is_complete in complete_by_package.items()
-        },
-        "files": actual,
+        "publish_needed_by_package": {PACKAGE: not complete},
+        "files": {PACKAGE: actual},
     }
     if args.github_output is not None:
         with args.github_output.open("a", encoding="utf-8") as output:
             output.write(f"publish_needed={'true' if not complete else 'false'}\n")
             output.write(
                 "primary_publish_needed="
-                f"{'false' if complete_by_package[PACKAGE] else 'true'}\n"
-            )
-            output.write(
-                "redirect_publish_needed="
-                f"{'false' if complete_by_package[REDIRECT_PACKAGE] else 'true'}\n"
+                f"{'false' if complete else 'true'}\n"
             )
     print(json.dumps(result, indent=2, sort_keys=True))
 

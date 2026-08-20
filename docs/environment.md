@@ -7,7 +7,7 @@ batch.
 ## Construction
 
 ```python
-from breakout_turbo_env import BreakoutVecEnv
+from env_breakoutatari2600_turbo_native import BreakoutVecEnv
 
 env = BreakoutVecEnv(
     "Breakout-Atari2600-v0",
@@ -37,7 +37,7 @@ Use the generic, vector-only Gymnasium factory with an explicit game:
 import gymnasium as gym
 
 env = gym.make_vec(
-    "breakout_turbo_env:Breakout-Turbo-v0",
+    "env_breakoutatari2600_turbo_native:EnvBreakoutAtari2600TurboNative-v0",
     game="Breakout-Atari2600-v0",
     num_envs=16,
     num_threads=8,
@@ -102,8 +102,8 @@ lanes. Use the optional adapter to make that translation explicit while
 keeping `BreakoutVecEnv` itself manual-reset:
 
 ```python
-from breakout_turbo_env import BreakoutVecEnv
-from breakout_turbo_env.sb3 import make_sb3_vec_env
+from env_breakoutatari2600_turbo_native import BreakoutVecEnv
+from env_breakoutatari2600_turbo_native.sb3 import make_sb3_vec_env
 
 native_env = BreakoutVecEnv(
     "Breakout-Atari2600-v0",

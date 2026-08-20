@@ -6,15 +6,19 @@ releases; changes will be recorded here.
 
 ## Unreleased
 
+### Fixed
+
+- Point repository links and sibling Stable Retro checkout defaults at the
+  standardized repository names.
+
 ## [0.5.7] - 2026-08-20
 
 ### Changed
 
-- Renamed the project and distribution to `env-BreakoutAtari2600-turbo-native`
-  and `env-breakoutatari2600-turbo-native` while preserving the
-  `breakout_turbo_env` import package, existing CLI, Gymnasium environment ID,
-  native extension, and snapshot codec ID; publish `breakout-turbo-env` as a
-  metadata-only migration package.
+- Completed the project identity rename to `env-BreakoutAtari2600-turbo-native`,
+  `env-breakoutatari2600-turbo-native`, and
+  `env_breakoutatari2600_turbo_native` across the CLI, Gymnasium environment,
+  native extension, and release workflow.
 
 ## [0.5.6] - 2026-08-14
 
@@ -42,7 +46,7 @@ releases; changes will be recorded here.
 ### Added
 
 - Added the vector-only Gymnasium factory
-  `breakout_turbo_env:Breakout-Turbo-v0`, with an explicit `game` argument and
+  `env_breakoutatari2600_turbo_native:EnvBreakoutAtari2600TurboNative-v0`, with an explicit `game` argument and
   the native vector environment as its result.
 
 ## [0.5.3] - 2026-08-12
@@ -88,8 +92,8 @@ releases; changes will be recorded here.
 - Added the immutable Turbo Vector API v1 declaration for capabilities,
   signals, action semantics, observation ownership, state catalogs, and
   per-lane RGB rendering.
-- Removed the legacy `BreakoutTurbo-v0` registration, legacy start-state
-  aliases, and legacy reset selector names. The canonical environment ID is
+- Removed an obsolete Gymnasium registration, legacy start-state aliases, and
+  legacy reset selector names. The canonical game ID is
   `Breakout-Atari2600-v0`, and vector reset selection uses `state_indices`.
 
 ## [0.4.1] - 2026-07-23
@@ -217,25 +221,25 @@ releases; changes will be recorded here.
 - Initial public release.
 
 [0.5.7]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.6...v0.5.7
-[0.5.6]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.5...v0.5.6
-[0.5.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.4...v0.5.5
-[0.5.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.3...v0.5.4
-[0.5.3]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.2...v0.5.3
-[0.5.2]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.5...v0.4.0
-[0.3.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.4...v0.3.5
-[0.3.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.3...v0.3.4
-[0.3.3]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.5...v0.3.0
-[0.2.5]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.4...v0.2.5
-[0.2.4]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.3...v0.2.4
-[0.2.3]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/tsilva/breakout-turbo-env/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/tsilva/breakout-turbo-env/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/tsilva/breakout-turbo-env/releases/tag/v0.1.0
+[0.5.6]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.5...v0.4.0
+[0.3.5]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.5...v0.3.0
+[0.2.5]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/tsilva/env-BreakoutAtari2600-turbo-native/releases/tag/v0.1.0

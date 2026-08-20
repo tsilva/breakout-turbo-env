@@ -77,8 +77,8 @@ def test_readme_delegates_training_to_pinned_gradlab_recipes():
     assert (
         "uvx gradlab@0.1.1 train Breakout-Atari2600-v0/ppo-stable-updates"
     ) in readme
-    assert "Breakout Turbo is ROM-free" in readme
-    assert "breakout-turbo-env train" not in readme
+    assert "env-BreakoutAtari2600-turbo-native is ROM-free" in readme
+    assert "env-breakoutatari2600-turbo-native train" not in readme
 
 
 def test_workflow_actions_are_pinned_to_full_commits():

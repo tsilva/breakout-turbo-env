@@ -15,7 +15,7 @@ FRAME_SKIP = 4
 FRAME_STACK = 4
 
 
-def build_parser(prog: str = "breakout-turbo-env benchmark") -> argparse.ArgumentParser:
+def build_parser(prog: str = "env-breakoutatari2600-turbo-native benchmark") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description="Benchmark the fixed 16-env full-preprocessing policy path"
@@ -133,7 +133,7 @@ def run_benchmark(*, steps: int, warmup: int, repeats: int, threads: int) -> lis
     return rates
 
 
-def main(argv=None, *, prog: str = "breakout-turbo-env benchmark") -> None:
+def main(argv=None, *, prog: str = "env-breakoutatari2600-turbo-native benchmark") -> None:
     args = build_parser(prog=prog).parse_args(argv)
     run_benchmark(
         steps=args.steps,

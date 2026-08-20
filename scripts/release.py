@@ -20,11 +20,7 @@ RELEASE_NOTES = REPO_ROOT / "scripts" / "release_notes.py"
 LOCK_SCRIPT = REPO_ROOT / "scripts" / "lock.py"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
-CARGO_PACKAGE_NAME = "breakout-turbo-env"
-MIGRATION_VERSION = "0.5.7"
-REDIRECT_PACKAGE = "breakout-turbo-env"
-REDIRECT_PYPROJECT = REPO_ROOT / "redirect" / "pyproject.toml"
-REDIRECT_RELEASE = REPO_ROOT / "scripts" / "redirect_release.py"
+CARGO_PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
 ALLOWED_RELEASE_FILES = {
     "Cargo.lock",
     "Cargo.toml",
@@ -32,7 +28,6 @@ ALLOWED_RELEASE_FILES = {
     "CITATION.cff",
     "VERSION.txt",
     "pyproject.toml",
-    "redirect/pyproject.toml",
     "uv.lock",
 }
 
@@ -100,14 +95,6 @@ def target_version(args: argparse.Namespace) -> str:
     else:
         version = helper_capture("resolve-version", "--part", "patch").splitlines()[-1]
     helper("check-pypi", "--version", version)
-    if version == MIGRATION_VERSION:
-        helper(
-            "check-pypi",
-            "--version",
-            version,
-            "--package",
-            REDIRECT_PACKAGE,
-        )
     return version
 
 
@@ -131,21 +118,6 @@ def finalize_release_notes(version: str) -> None:
 
 def validate_release_notes(version: str) -> None:
     run([str(PYTHON), str(RELEASE_NOTES), "--version", version])
-
-
-def update_redirect_version(version: str) -> None:
-    if version != MIGRATION_VERSION:
-        return
-    configuration = read_toml(REDIRECT_PYPROJECT)
-    previous = str(configuration["project"]["version"])
-    source = REDIRECT_PYPROJECT.read_text(encoding="utf-8")
-    version_line = f'version = "{previous}"'
-    if source.count(version_line) != 1:
-        raise SystemExit("redirect pyproject must contain exactly one project version")
-    source = source.replace(version_line, f'version = "{version}"', 1)
-    source = source.replace(f"=={previous}", f"=={version}")
-    REDIRECT_PYPROJECT.write_text(source, encoding="utf-8")
-    run([str(PYTHON), str(REDIRECT_RELEASE), "check-source", "--version", version])
 
 
 def read_toml(path: Path) -> dict[str, object]:
@@ -245,7 +217,6 @@ def prepare(args: argparse.Namespace) -> None:
     graph_before = dependency_graph_snapshot()
     finalize_release_notes(version)
     helper("bump-version", "--to", version, "--write")
-    update_redirect_version(version)
     helper("check-version", "--version", version)
     helper("check-lock-policy")
     ensure_dependency_graph_unchanged(graph_before)

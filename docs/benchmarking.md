@@ -10,7 +10,7 @@ Install the release build and run from the repository root:
 
 ```bash
 make develop-release
-uv run breakout-turbo-env benchmark --steps 30000 --warmup 1000 --repeats 5 --threads 8
+uv run env-breakoutatari2600-turbo-native benchmark --steps 30000 --warmup 1000 --repeats 5 --threads 8
 ```
 
 The fixed workload uses 16 environments, 84×84 grayscale observations, frame

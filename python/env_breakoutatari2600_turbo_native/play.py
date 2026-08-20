@@ -22,7 +22,10 @@ class _ObservationViewer:
         stack, height, width = observation.shape[1:]
         self._pygame = pygame
         self._size = (width * stack * scale, height * scale)
-        self._window = Window("Breakout Turbo | processed observation", size=self._size)
+        self._window = Window(
+            "env-BreakoutAtari2600-turbo-native | processed observation",
+            size=self._size,
+        )
         self._renderer = Renderer(self._window)
 
     def show(self, observation: np.ndarray) -> None:
@@ -40,9 +43,9 @@ class _ObservationViewer:
         self._window.destroy()
 
 
-def build_parser(prog: str = "breakout-turbo-env play") -> argparse.ArgumentParser:
+def build_parser(prog: str = "env-breakoutatari2600-turbo-native play") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog=prog, description="Play breakout-turbo-env manually"
+        prog=prog, description="Play env-breakoutatari2600-turbo-native manually"
     )
     parser.add_argument("--layout", choices=_LAYOUTS, default="full")
     parser.add_argument(
@@ -240,7 +243,7 @@ def run(
             state = "PAUSED" if paused else "playing"
             speed = "uncapped" if uncapped else f"{fps} FPS"
             pygame.display.set_caption(
-                f"Breakout Turbo | {state} | {speed} | score {score}"
+                f"env-BreakoutAtari2600-turbo-native | {state} | {speed} | score {score}"
                 f" | lives {lives} | bricks {bricks}"
             )
             pygame.display.flip()
@@ -257,7 +260,7 @@ def run(
         pygame.quit()
 
 
-def main(argv=None, *, prog: str = "breakout-turbo-env play") -> None:
+def main(argv=None, *, prog: str = "env-breakoutatari2600-turbo-native play") -> None:
     args = build_parser(prog=prog).parse_args(argv)
     run(
         layout=args.layout,

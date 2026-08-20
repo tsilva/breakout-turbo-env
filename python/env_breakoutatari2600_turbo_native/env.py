@@ -10,7 +10,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.vector import AutoresetMode, VectorEnv
 
-from ._breakout_turbo import (
+from ._env_breakoutatari2600_turbo_native import (
     FIXED_POINT_ONE,
     RAW_HEIGHT,
     RAW_WIDTH,

@@ -71,7 +71,7 @@ def summarize(rates: list[float]) -> dict[str, float]:
 
 
 def build_turbo(num_threads: int):
-    from breakout_turbo_env import BreakoutVecEnv
+    from env_breakoutatari2600_turbo_native import BreakoutVecEnv
 
     return BreakoutVecEnv(
         game="Breakout-Atari2600-v0",
@@ -142,7 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stable-retro-repo",
         type=Path,
-        default=Path(__file__).resolve().parents[2] / "stable-retro-turbo",
+        default=Path(__file__).resolve().parents[2] / "env-StableRetro-turbo",
     )
     parser.add_argument("--json", action="store_true")
     return parser
@@ -186,14 +186,14 @@ def main(argv=None) -> None:
             "info_filter": "none",
             "maxpool_last_two": False,
         },
-        "breakout_turbo_env": turbo,
+        "env_breakoutatari2600_turbo_native": turbo,
         "stable_retro_turbo": stable,
         "median_speedup": (
             turbo["median_env_steps_per_sec"]
             / stable["median_env_steps_per_sec"]
         ),
         "raw_rates": {
-            "breakout_turbo_env": turbo_rates,
+            "env_breakoutatari2600_turbo_native": turbo_rates,
             "stable_retro_turbo": stable_rates,
         },
     }

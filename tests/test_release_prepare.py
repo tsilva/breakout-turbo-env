@@ -60,7 +60,6 @@ def test_prepare_change_allowlist_contains_only_release_metadata():
         "CITATION.cff",
         "VERSION.txt",
         "pyproject.toml",
-        "redirect/pyproject.toml",
         "uv.lock",
     }
 
@@ -71,38 +70,3 @@ def test_changed_paths_does_not_parse_porcelain_status_columns(monkeypatch):
     monkeypatch.setattr(release, "capture", lambda _command: next(outputs))
 
     assert release.changed_paths() == ["CHANGELOG.md", "VERSION.txt"]
-
-
-def test_update_redirect_version_updates_project_and_forwarded_extras(
-    monkeypatch, tmp_path
-):
-    release = release_module()
-    pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(
-        '[project]\nname = "breakout-turbo-env"\nversion = "0.5.6"\n'
-        'dependencies = ["env-breakoutatari2600-turbo-native==0.5.6"]\n\n'
-        '[project.optional-dependencies]\n'
-        'play = ["env-breakoutatari2600-turbo-native[play]==0.5.6"]\n'
-        'dev = ["env-breakoutatari2600-turbo-native[dev]==0.5.6"]\n\n'
-        '[tool.setuptools]\npackages = []\n',
-        encoding="utf-8",
-    )
-    commands = []
-    monkeypatch.setattr(release, "REDIRECT_PYPROJECT", pyproject)
-    monkeypatch.setattr(release, "run", commands.append)
-
-    release.update_redirect_version("0.5.7")
-
-    source = pyproject.read_text(encoding="utf-8")
-    assert 'version = "0.5.7"' in source
-    assert source.count("==0.5.7") == 3
-    assert "0.5.6" not in source
-    assert commands == [
-        [
-            str(release.PYTHON),
-            str(release.REDIRECT_RELEASE),
-            "check-source",
-            "--version",
-            "0.5.7",
-        ]
-    ]

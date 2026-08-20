@@ -163,7 +163,7 @@ jobs:
           SDL_VIDEODRIVER: dummy
         run: |
           .venv/bin/python -c "import pygame; print(pygame.version.ver)"
-          .venv/bin/python -m breakout_turbo_env.play --help
+          .venv/bin/python -m env_breakoutatari2600_turbo_native.play --help
 
   package:
     name: Package ${{ matrix.platform }}

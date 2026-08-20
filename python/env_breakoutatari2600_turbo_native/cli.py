@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="breakout-turbo-env",
+        prog="env-breakoutatari2600-turbo-native",
         description="Deterministic high-throughput Breakout environment tools",
     )
     parser.add_argument(
@@ -28,12 +28,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args[0] == "play":
         from .play import main as play_main
 
-        play_main(args[1:], prog="breakout-turbo-env play")
+        play_main(args[1:], prog="env-breakoutatari2600-turbo-native play")
         return
     if args[0] == "benchmark":
         from .benchmark import main as benchmark_main
 
-        benchmark_main(args[1:], prog="breakout-turbo-env benchmark")
+        benchmark_main(args[1:], prog="env-breakoutatari2600-turbo-native benchmark")
         return
     parser.parse_args(args)
 

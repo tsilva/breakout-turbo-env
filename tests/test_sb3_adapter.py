@@ -4,7 +4,7 @@ import sys
 from types import ModuleType
 
 import numpy as np
-from breakout_turbo_env.sb3 import _lane_infos, make_sb3_vec_env
+from env_breakoutatari2600_turbo_native.sb3 import _lane_infos, make_sb3_vec_env
 
 
 class FakeVecEnv:

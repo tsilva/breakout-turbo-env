@@ -3,7 +3,7 @@
 PYTHON ?= .venv/bin/python
 UV_CACHE_DIR ?= .uv-cache
 PYTEST_ARGS ?=
-STABLE_RETRO_REPO ?= $(abspath ../stable-retro-turbo)
+STABLE_RETRO_REPO ?= $(abspath ../env-StableRetro-turbo)
 TURBOBENCH ?= $(abspath ../turbobench/.venv/bin/turbobench)
 ORACLE_OUTPUT ?=
 ORACLE_RECEIPT ?=
@@ -15,10 +15,10 @@ develop-release:
 	UV_CACHE_DIR=$(UV_CACHE_DIR) $(PYTHON) -m maturin develop --release --locked
 
 benchmark: develop-release
-	$(PYTHON) -m breakout_turbo_env.benchmark
+	$(PYTHON) -m env_breakoutatari2600_turbo_native.benchmark
 
 play: develop-release
-	$(PYTHON) -m breakout_turbo_env.play
+	$(PYTHON) -m env_breakoutatari2600_turbo_native.play
 
 lint:
 	$(PYTHON) -m ruff check .

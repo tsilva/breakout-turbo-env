@@ -2,13 +2,17 @@ from importlib import resources
 
 import numpy as np
 import pytest
-from breakout_turbo_env import ACTION_SETS, ACTION_TABLES, BreakoutVecEnv
+from env_breakoutatari2600_turbo_native import (
+    ACTION_SETS,
+    ACTION_TABLES,
+    BreakoutVecEnv,
+)
 
 GAME_ID = "Breakout-Atari2600-v0"
 
 
 def test_packaged_metadata_is_available_and_defines_simple():
-    metadata = resources.files("breakout_turbo_env").joinpath(
+    metadata = resources.files("env_breakoutatari2600_turbo_native").joinpath(
         "data", "Breakout-Atari2600-v0", "metadata.json"
     )
 

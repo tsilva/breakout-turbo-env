@@ -1,7 +1,7 @@
 """Live differential tests against the Stable Retro Breakout cartridge.
 
 These tests contain no reference trace. Each case generates actions at runtime
-and applies the same action to Stable Retro and breakout-turbo-env before
+and applies the same action to Stable Retro and env-BreakoutAtari2600-turbo-native before
 comparing the resulting native frame and transition values.
 """
 
@@ -19,7 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STABLE_REPO = Path(
     os.environ.get(
-        "BREAKOUT_STABLE_RETRO_REPO", REPO_ROOT.parent / "stable-retro-turbo"
+        "BREAKOUT_STABLE_RETRO_REPO", REPO_ROOT.parent / "env-StableRetro-turbo"
     )
 ).resolve()
 DATA_DIR = STABLE_REPO / "stable_retro/data/stable/Breakout-Atari2600-v0"
@@ -38,7 +38,7 @@ pytestmark = pytest.mark.stable_retro
 
 def test_packaged_action_table_uses_original_stable_retro_button_names():
     turbo_metadata = json.loads(
-        resources.files("breakout_turbo_env")
+        resources.files("env_breakoutatari2600_turbo_native")
         .joinpath("data", "Breakout-Atari2600-v0", "metadata.json")
         .read_text(encoding="utf-8")
     )
@@ -159,7 +159,7 @@ def test_native_frames_rewards_and_lifecycle_match_live_cartridge(
 
 
 def test_policy_observations_match_live_cartridge(stable_reference):
-    from breakout_turbo_env import BreakoutVecEnv
+    from env_breakoutatari2600_turbo_native import BreakoutVecEnv
 
     def policy_frame(frame):
         # Preserve Stable Retro's raw BGR-labeled byte path: the renderer's
@@ -265,8 +265,8 @@ def test_policy_observations_match_live_cartridge(stable_reference):
 
 
 def test_seeded_reset_noops_match_live_cartridge_render_frames(stable_reference):
-    from breakout_turbo_env import BreakoutVecEnv
     from compare_stable_retro import canonicalize_stable_retro_frame
+    from env_breakoutatari2600_turbo_native import BreakoutVecEnv
 
     seed = 7
     expected_noops = int(np.random.default_rng(seed).integers(1, 31, dtype=np.uint64))

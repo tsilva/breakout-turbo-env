@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from breakout_turbo_env.cli import build_parser, main
+from env_breakoutatari2600_turbo_native.cli import build_parser, main
 
 
 def test_cli_help_and_commands():
@@ -18,6 +18,6 @@ def test_cli_dispatches_subcommands(monkeypatch):
     def fake_play(argv, *, prog):
         calls.append(("play", list(argv), prog))
 
-    monkeypatch.setattr("breakout_turbo_env.play.main", fake_play)
+    monkeypatch.setattr("env_breakoutatari2600_turbo_native.play.main", fake_play)
     main(["play", "--show-obs"])
-    assert calls == [("play", ["--show-obs"], "breakout-turbo-env play")]
+    assert calls == [("play", ["--show-obs"], "env-breakoutatari2600-turbo-native play")]

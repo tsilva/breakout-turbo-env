@@ -1229,7 +1229,10 @@ fn deserialize_lane(
     })
 }
 
-#[pyclass(frozen, module = "breakout_turbo_env._breakout_turbo")]
+#[pyclass(
+    frozen,
+    module = "env_breakoutatari2600_turbo_native._env_breakoutatari2600_turbo_native"
+)]
 struct BreakoutLiveSnapshot {
     owner: Arc<()>,
     lane: Lane,
@@ -2018,7 +2021,7 @@ impl NativeBreakoutVecEnv {
 }
 
 #[pymodule]
-fn _breakout_turbo(module: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _env_breakoutatari2600_turbo_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<BreakoutLiveSnapshot>()?;
     module.add_class::<NativeBreakoutVecEnv>()?;
     module.add("RAW_WIDTH", RAW_W)?;

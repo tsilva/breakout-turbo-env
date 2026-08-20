@@ -77,11 +77,6 @@ jobs:
             --version "${{ steps.identity.outputs.version }}" > /dev/null
           .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
             check-pypi --version "${{ steps.identity.outputs.version }}"
-          .venv/bin/python scripts/redirect_release.py check-source \
-            --version "${{ steps.identity.outputs.version }}"
-          .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
-            check-pypi --package breakout-turbo-env \
-            --version "${{ steps.identity.outputs.version }}"
 
       - name: Run source checks
         run: |
@@ -199,13 +194,6 @@ jobs:
           .venv/bin/python .codex/skills/build-release/scripts/release_build.py \
             build-sdist --version "${{ needs.validate.outputs.version }}"
 
-      - name: Build and audit metadata-only migration distributions
-        run: |
-          .venv/bin/python scripts/redirect_release.py build \
-            --version "${{ needs.validate.outputs.version }}" \
-            --out-dir redirect-dist
-          .venv/bin/python -m twine check redirect-dist/*
-
       - name: Assemble and audit exact distributions
         shell: bash
         run: |
@@ -213,7 +201,6 @@ jobs:
           mkdir -p candidate/dist
           cp wheels/*.whl candidate/dist/
           cp wheelhouse-v${{ needs.validate.outputs.version }}-sdist/*.tar.gz candidate/dist/
-          cp redirect-dist/*.{whl,tar.gz} candidate/dist/
           mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-macos-arm64
           mkdir -p wheelhouse-v${{ needs.validate.outputs.version }}-linux-x86_64
           cp candidate/dist/*macosx*.whl wheelhouse-v${{ needs.validate.outputs.version }}-macos-arm64/

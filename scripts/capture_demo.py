@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from breakout_turbo_env import FIXED_POINT_ONE, BreakoutVecEnv
+from env_breakoutatari2600_turbo_native import FIXED_POINT_ONE, BreakoutVecEnv
 
 
 def build_parser() -> argparse.ArgumentParser:

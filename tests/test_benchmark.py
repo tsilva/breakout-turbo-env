@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from breakout_turbo_env.benchmark import NUM_ENVS, build_parser, run_benchmark
+from env_breakoutatari2600_turbo_native.benchmark import (
+    NUM_ENVS,
+    build_parser,
+    run_benchmark,
+)
 
 
 def test_benchmark_contract_is_fixed_to_16_envs(capsys):

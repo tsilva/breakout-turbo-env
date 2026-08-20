@@ -1,5 +1,5 @@
 [package]
-name = "breakout-turbo-env"
+name = "env-breakoutatari2600-turbo-native"
 version = "0.5.7"
 edition = "2024"
 rust-version = "1.85"
@@ -10,7 +10,7 @@ repository = "https://github.com/tsilva/env-BreakoutAtari2600-turbo-native"
 readme = "README.md"
 
 [lib]
-name = "_breakout_turbo"
+name = "_env_breakoutatari2600_turbo_native"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -120,21 +120,14 @@ jobs:
       - name: Stage candidate distributions for publishing
         if: steps.pypi.outputs.publish_needed == 'true'
         run: |
-          mkdir publish-primary publish-redirect
+          mkdir publish-primary
           cp candidate/dist/env_breakoutatari2600_turbo_native-* publish-primary/
-          cp candidate/dist/breakout_turbo_env-* publish-redirect/
 
       - name: Publish exact primary candidate to PyPI
         if: steps.pypi.outputs.primary_publish_needed == 'true'
         uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
         with:
           packages-dir: publish-primary
-
-      - name: Publish exact migration candidate to PyPI
-        if: steps.pypi.outputs.redirect_publish_needed == 'true'
-        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
-        with:
-          packages-dir: publish-redirect
 
       - name: Verify exact PyPI file set
         shell: bash

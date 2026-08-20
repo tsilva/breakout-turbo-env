@@ -15,8 +15,8 @@ from .env import (
     BreakoutVecEnv,
 )
 
-GYMNASIUM_ENV_ID = "Breakout-Turbo-v0"
-_GYMNASIUM_VECTOR_ENTRY_POINT = "breakout_turbo_env:_make_gymnasium_vec_env"
+GYMNASIUM_ENV_ID = "EnvBreakoutAtari2600TurboNative-v0"
+_GYMNASIUM_VECTOR_ENTRY_POINT = "env_breakoutatari2600_turbo_native:_make_gymnasium_vec_env"
 _COMPATIBILITY_ENV_SPECS = {
     "Breakout-Atari2600-v0": {
         "game": "Breakout-Atari2600-v0",
@@ -64,7 +64,7 @@ def _register_gymnasium_envs() -> None:
             gym.register(
                 id=env_id,
                 entry_point=None,
-                vector_entry_point="breakout_turbo_env:BreakoutVecEnv",
+                vector_entry_point="env_breakoutatari2600_turbo_native:BreakoutVecEnv",
                 kwargs=kwargs,
             )
 

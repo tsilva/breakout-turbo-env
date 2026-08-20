@@ -27,9 +27,9 @@ UV_LOCK = REPO_ROOT / "uv.lock"
 CITATION = REPO_ROOT / "CITATION.cff"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
-CARGO_PACKAGE_NAME = "breakout-turbo-env"
-IMPORT_NAME = "breakout_turbo_env"
-EXTENSION_NAME = "_breakout_turbo"
+CARGO_PACKAGE_NAME = "env-breakoutatari2600-turbo-native"
+IMPORT_NAME = "env_breakoutatari2600_turbo_native"
+EXTENSION_NAME = "_env_breakoutatari2600_turbo_native"
 MATURIN_IMAGE = (
     "ghcr.io/pyo3/maturin@"
     "sha256:2665227312dd1eab1c29c70a001dc8aac53155a2d048bede3b2df7f1691c8e38"
@@ -567,7 +567,7 @@ def audit_sdist(archive_path: Path, version: str) -> dict[str, object]:
         "has_pyproject": f"{prefix}pyproject.toml" in names,
         "has_cargo_manifest": f"{prefix}Cargo.toml" in names,
         "has_rust_source": f"{prefix}src/lib.rs" in names,
-        "has_python_source": f"{prefix}python/breakout_turbo_env/env.py" in names,
+        "has_python_source": f"{prefix}python/env_breakoutatari2600_turbo_native/env.py" in names,
         "has_readme": f"{prefix}README.md" in names,
         "has_license": f"{prefix}LICENSE" in names,
     }

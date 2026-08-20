@@ -4,7 +4,7 @@ import hashlib
 
 import numpy as np
 import pytest
-from breakout_turbo_env import BreakoutVecEnv
+from env_breakoutatari2600_turbo_native import BreakoutVecEnv
 
 GAME_ID = "Breakout-Atari2600-v0"
 
